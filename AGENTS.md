@@ -48,15 +48,18 @@ CI (GitHub Actions) runs: gofmt check → vet → `go test -race` → build (`ci
 
 ## Layout
 
-- `cmd/` — cobra commands. `root.go` (runs TUI by default, like bare `newsboat`), `tui.go` (urls loading, refresh wiring, Program startup), `import.go` (OPML import/export), `preview.go` (standalone chafa/sixel image preview), `version.go`.
+- `cmd/` — cobra commands. `root.go` (runs TUI by default, like bare `newsboat`), `tui.go` (urls loading, refresh wiring, Program startup), `import.go` (OPML import/export), `podcast.go` (queue management CLI), `preview.go` (standalone chafa/sixel image preview), `version.go`.
 - `internal/version/` — build metadata vars, injected via ldflags in `.goreleaser.yaml` AND `nix/package.nix`. Change the import path there if the module path changes.
 - `internal/urls/` — newsboat-compatible urls-file parser + `Format` (roundtrips with `Parse`). Has table tests — extend them when adding fields.
-- `internal/config/` — viper loading. Precedence: CLI flags → `$XDG_CONFIG_HOME/charss/config.toml` → defaults. Keys so far: `browser` (chawan), `chafa`. A missing config file is not an error; a malformed one is.
-- `internal/feed/` — HTTP fetching via gofeed, conditional requests (ETag/304 → `ErrNotModified`), typed `HTTPError`/`ParseError`.
-- `internal/store/` — JSON per-feed cache in `$XDG_CACHE_HOME/charss/feeds/`, atomic writes, read-state per article.
+- `internal/config/` — newsboat-syntax config (NOT TOML; viper is gone): `key value` lines, `bind-key`/`unbind-key`, `macro`, `color`, `include` (cycle-guarded). Options map + `Bindings.Lookup(context, key)` + defaults per context. Legacy `config.toml` still parsed as fallback. A missing config file is not an error; a malformed one is.
+- `internal/feed/` — HTTP fetching via gofeed, conditional requests (ETag/304 → `ErrNotModified`), typed `HTTPError`/`ParseError`, enclosures on articles.
+- `internal/store/` — **SQLite** (modernc.org/sqlite, cgo-free) single-db cache `$XDG_CACHE_HOME/charss/charss.db` (WAL). One-time migration from old JSON `feeds/` dir (backup kept as `feeds.migrated-backup`). `Storer` interface in `internal/tui/deps.go` is the contract.
 - `internal/render/` — chawan process driver: temp HTML files, process group, ctx kill, `ExitError`. Unit tests use fake browser scripts.
 - `internal/image/` — chafa conversion (sixel default, kitty/symbols fallback only), TERM-based `Detect` with override, HTTP fetcher.
-- `internal/tui/` — Bubble Tea screens: feed list → article list → open in chawan (terminal handoff via Release/Restore). Key bindings live in `keys.go` (`KeyMap`), not inline in `Update`. Refresh pipeline in `refresh.go`, pure merge logic is table-tested (`merge_test.go`).
+- `internal/filter/` — newsboat filter expression language (parse + eval), `ParseQueryFeedURL` for query feeds.
+- `internal/search/` — full-text search with newsboat semantics (AND terms, `-exclusions`, phrases, `/regex/`), hit ranges.
+- `internal/podcast/` — enclosure detection, persistent download queue (JSON `queue.json`), downloader with resume.
+- `internal/tui/` — Bubble Tea screens: feed list → article list → open in chawan (terminal handoff via Release/Restore; a degenerate `WindowSizeMsg` around Restore must be ignored — see model.go width guard). Config-driven bindings/colors, filter/search prompts, query feeds, sort orders, help screen. Key handling resolves through `internal/config` operations, not hardcoded keys.
 - `nix/` — `package.nix` (buildGoModule, shared by flake and HM module default), `hm-module.nix` (Home Manager module: `programs.charss.{enable,package,settings,urls}`).
 - `flake.nix` — package, devShell (with real chawan + chafa), homeManagerModules, checks, formatter.
 
