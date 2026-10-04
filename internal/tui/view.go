@@ -5,45 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/71g3pf4c3/charss/internal/feed"
-	"github.com/71g3pf4c3/charss/internal/urls"
-)
-
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
-			Padding(0, 1)
-
-	selectedStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62"))
-
-	unreadStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("214"))
-
-	articleUnreadStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("15"))
-
-	readStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
-
-	feedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("250"))
-
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
-
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("203"))
-
-	refreshStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("39"))
 )
 
 // View implements tea.Model.
@@ -51,12 +12,19 @@ func (m Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
+	var v string
 	switch m.screen {
 	case screenArticleList:
-		return m.articleListView()
+		v = m.articleListView()
+	case screenHelp:
+		v = m.helpView()
 	default:
-		return m.feedListView()
+		v = m.feedListView()
 	}
+	if m.sty.background != "" {
+		return lipgloss.NewStyle().Background(m.sty.background).Render(v)
+	}
+	return v
 }
 
 // listRows is the number of list lines that fit given the fixed header
@@ -69,12 +37,17 @@ func (m Model) listRows() int {
 	return rows
 }
 
+// statusLine renders the status area: the filter/search input while it
+// is open, otherwise the transient status message. The status line
+// belongs to messages and errors only; refresh progress lives in the
+// header (refreshBadge) so a long refresh can never hide an error like
+// "chawan not found".
 func (m Model) statusLine() string {
-	// The status line belongs to messages and errors only. Refresh progress
-	// lives in the header (refreshBadge) so a long refresh can never
-	// hide an error like "chawan not found".
+	if m.inputKind != inputNone {
+		return m.input.View()
+	}
 	if m.status != "" {
-		return statusStyle.Render(truncate(m.status, maxInt(1, m.width)))
+		return m.sty.status.Render(truncate(m.status, maxInt(1, m.width)))
 	}
 	return ""
 }
@@ -82,7 +55,7 @@ func (m Model) statusLine() string {
 // refreshBadge is the in-flight refresh counter shown in the screen header.
 func (m Model) refreshBadge() string {
 	if m.refreshing > 0 {
-		return " " + refreshStyle.Render(fmt.Sprintf("⟳ %d", m.refreshing))
+		return " " + m.sty.refresh.Render(fmt.Sprintf("⟳ %d", m.refreshing))
 	}
 	return ""
 }
@@ -90,48 +63,58 @@ func (m Model) refreshBadge() string {
 func (m Model) feedListView() string {
 	var b strings.Builder
 
+	rows := m.feedRows()
 	header := "charss — feeds"
 	if n := m.unreadTotal(); n > 0 {
 		header += fmt.Sprintf("  (%d unread)", n)
 	}
-	b.WriteString(titleStyle.Render(header))
+	if m.feedFilter != nil {
+		header += "  [filtered]"
+	}
+	b.WriteString(m.sty.title.Render(header))
 	b.WriteString(m.refreshBadge())
 	b.WriteString("\n\n")
 
-	if len(m.feeds) == 0 {
-		b.WriteString(dimStyle.Render("no feeds — add URLs to your urls file"))
+	if len(rows) == 0 {
+		if m.feedFilter != nil {
+			b.WriteString(m.sty.dim.Render("no feeds match the filter"))
+		} else {
+			b.WriteString(m.sty.dim.Render("no feeds — add URLs to your urls file"))
+		}
 		b.WriteString("\n")
 	}
 
-	start, end := windowRange(m.cursor, len(m.feeds), m.listRows())
+	start, end := windowRange(m.cursor, len(rows), m.listRows())
 	for i := start; i < end; i++ {
-		b.WriteString(m.feedLine(m.feeds[i], i == m.cursor))
+		b.WriteString(m.feedLine(rows[i], i == m.cursor))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 	b.WriteString(m.statusLine())
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(m.keys.feedListHelp()))
+	b.WriteString(m.sty.dim.Render(m.feedListHelp()))
 	return b.String()
 }
 
-func (m Model) feedLine(f urls.Feed, selected bool) string {
-	title := feedTitle(f)
-	if len(f.Tags) > 0 {
-		title += " " + dimStyle.Render(strings.Join(f.Tags, " "))
+func (m Model) feedLine(r feedRow, selected bool) string {
+	title := r.title
+	if len(r.tags) > 0 {
+		title += " " + m.sty.dim.Render(strings.Join(r.tags, " "))
 	}
-	n := m.states[f.URL].unread() // nil-safe receiver
+	if r.queryErr != nil {
+		title += " " + m.sty.status.Render("(invalid filter)")
+	}
 
 	var count string
-	if n > 0 {
-		count = unreadStyle.Render(fmt.Sprintf("%4d", n))
+	if r.unread > 0 {
+		count = m.sty.unreadCount.Render(fmt.Sprintf("%4d", r.unread))
 	} else {
-		count = dimStyle.Render(fmt.Sprintf("%4d", n))
+		count = m.sty.dim.Render(fmt.Sprintf("%4d", r.unread))
 	}
 	line := count + "  " + title
 	if selected {
-		return selectedStyle.Render("▶ ") + line
+		return m.sty.selected.Render("▶ ") + line
 	}
 	return "  " + line
 }
@@ -139,61 +122,111 @@ func (m Model) feedLine(f urls.Feed, selected bool) string {
 func (m Model) articleListView() string {
 	var b strings.Builder
 
-	st := m.states[m.active]
-	header := "charss — " + m.feedTitle(m.active)
-	if st != nil && len(st.articles) > 0 {
-		if n := st.unread(); n > 0 {
-			header += fmt.Sprintf("  (%d/%d unread)", n, len(st.articles))
-		} else {
-			header += fmt.Sprintf("  (%d articles, all read)", len(st.articles))
+	refs := m.articleRefs()
+	header := "charss — " + m.activeTitle()
+	if m.searchOn {
+		if len(refs) > 0 {
+			header += fmt.Sprintf("  (%d results)", len(refs))
 		}
+	} else if n := m.activeUnread(); n > 0 {
+		if m.artFilter != nil {
+			header += fmt.Sprintf("  (filtered %d/%d)", len(refs), m.activeTotal())
+		} else {
+			header += fmt.Sprintf("  (%d/%d unread)", n, m.activeTotal())
+		}
+	} else if m.activeTotal() > 0 {
+		if m.artFilter != nil {
+			header += fmt.Sprintf("  (filtered %d/%d)", len(refs), m.activeTotal())
+		} else {
+			header += fmt.Sprintf("  (%d articles, all read)", m.activeTotal())
+		}
+	} else if m.artFilter != nil {
+		header += fmt.Sprintf("  (filtered %d/%d)", len(refs), m.activeTotal())
 	}
-	b.WriteString(titleStyle.Render(header))
+	b.WriteString(m.sty.title.Render(header))
 	b.WriteString(m.refreshBadge())
 	b.WriteString("\n\n")
 
-	arts := articlesOf(st)
-	if len(arts) == 0 {
-		b.WriteString(dimStyle.Render("no articles — press q and r to reload this feed"))
+	if len(refs) == 0 {
+		switch {
+		case m.artFilter != nil:
+			b.WriteString(m.sty.dim.Render("no articles match the filter"))
+		case m.searchOn:
+			b.WriteString(m.sty.dim.Render("no articles match the search"))
+		default:
+			b.WriteString(m.sty.dim.Render("no articles — press q and r to reload this feed"))
+		}
 		b.WriteString("\n")
 	}
 
-	start, end := windowRange(m.acursor, len(arts), m.listRows())
+	start, end := windowRange(m.acursor, len(refs), m.listRows())
 	for i := start; i < end; i++ {
-		b.WriteString(m.articleLine(st, arts[i], i == m.acursor))
+		b.WriteString(m.articleLine(refs[i], i == m.acursor))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 	b.WriteString(m.statusLine())
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(m.keys.articleListHelp()))
+	b.WriteString(m.sty.dim.Render(m.articleListHelp()))
 	return b.String()
 }
 
-func (m Model) articleLine(st *feedState, a feed.Article, selected bool) string {
+// activeUnread counts unread articles in the unfiltered active list.
+func (m Model) activeUnread() int {
+	n := 0
+	for _, r := range m.activeAllRefs() {
+		if !m.readOf(r.feedURL, r.art.ID) {
+			n++
+		}
+	}
+	return n
+}
+
+// activeTotal is the size of the unfiltered active list (the M in
+// "(filtered N/M)").
+func (m Model) activeTotal() int {
+	return len(m.activeAllRefs())
+}
+
+// activeAllRefs builds the active article list without the filter and
+// the show-read toggle (but with the configured sort), so filtered
+// counts can be compared against the full list.
+func (m Model) activeAllRefs() []articleRef {
+	savedFilter, savedRead := m.artFilter, m.showRead
+	m.artFilter, m.showRead = nil, true
+	refs := m.articleRefs()
+	m.artFilter, m.showRead = savedFilter, savedRead
+	return refs
+}
+
+func (m Model) articleLine(r articleRef, selected bool) string {
 	// Line layout: "N Jan 02  Title…". Keep the column budget in sync.
 	const fixed = 2 + 2 + 6 + 2 // cursor, N mark, date, gaps
+	unread := !m.readOf(r.feedURL, r.art.ID)
 	mark := "  "
-	if !st.read[a.ID] {
-		mark = unreadStyle.Render("N ")
+	if unread {
+		mark = m.sty.unreadCount.Render("N ")
 	}
 	date := "      "
-	if !a.Published.IsZero() {
-		date = a.Published.Format("Jan 02")
+	if !r.art.Published.IsZero() {
+		date = r.art.Published.Format("Jan 02")
 	}
 	budget := m.width - fixed - 2 // headroom for the cursor prefix
 	if budget < 10 {
 		budget = 10
 	}
-	line := mark + date + "  " + truncate(a.Title, budget)
-	if !st.read[a.ID] {
-		line = articleUnreadStyle.Render(line)
+	line := mark + date + "  " + truncate(r.art.Title, budget)
+	if unread {
+		line = m.sty.articleUnread.Render(line)
 	} else {
-		line = readStyle.Render(line)
+		line = m.sty.read.Render(line)
 	}
 	if selected {
-		return selectedStyle.Render("▶ ") + line
+		if unread {
+			return m.sty.selectedUnread.Render("▶ ") + line
+		}
+		return m.sty.selected.Render("▶ ") + line
 	}
 	return "  " + line
 }

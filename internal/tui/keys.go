@@ -3,105 +3,203 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/71g3pf4c3/charss/internal/config"
 )
 
-// KeyMap holds the newsboat-compatible bindings for both screens.
-// Unhandled bindings must be added here, not inlined in Update.
-type KeyMap struct {
-	// Shared.
-	Up     key.Binding
-	Down   key.Binding
-	First  key.Binding // g / Home — jump to first line
-	Last   key.Binding // G / End — jump to last line
-	Redraw key.Binding
-
-	// Feed list.
-	Quit      key.Binding // q
-	Reload    key.Binding // r — reload current feed
-	ReloadAll key.Binding // R — reload all feeds
-	OpenFeed  key.Binding // Enter / l / Right — open article list
-
-	// Article list.
-	Back        key.Binding // q / Esc / Left / h
-	OpenArticle key.Binding // Enter / o — open in chawan
-	ToggleRead  key.Binding // m
-	MarkAllRead key.Binding // A
+// newsboatKeyName converts a Bubble Tea key message into the newsboat
+// bind-key key-name space that config.Bindings is addressed by:
+// ENTER, ESC, UP, DOWN, LEFT, RIGHT, PPAGE, NPAGE, HOME, END, TAB, ...,
+// control keys as caret notation (^F, matching newsboat's bind-key
+// syntax), single runes as themselves (case-sensitive: "a" and "A" are
+// different keys).
+func newsboatKeyName(msg tea.KeyMsg) string {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return "ENTER"
+	case tea.KeyEsc:
+		return "ESC"
+	case tea.KeyUp:
+		return "UP"
+	case tea.KeyDown:
+		return "DOWN"
+	case tea.KeyLeft:
+		return "LEFT"
+	case tea.KeyRight:
+		return "RIGHT"
+	case tea.KeyHome:
+		return "HOME"
+	case tea.KeyEnd:
+		return "END"
+	case tea.KeyPgUp:
+		return "PPAGE"
+	case tea.KeyPgDown:
+		return "NPAGE"
+	case tea.KeyTab:
+		return "TAB"
+	case tea.KeyBackspace:
+		return "BACKSPACE"
+	case tea.KeyDelete:
+		return "DEL"
+	case tea.KeyInsert:
+		return "INS"
+	case tea.KeySpace:
+		return " "
+	}
+	if msg.Type >= tea.KeyCtrlA && msg.Type <= tea.KeyCtrlZ {
+		// The ctrl+a..z key codes are contiguous; newsboat writes them
+		// in caret notation ("ctrl+f" -> "^F").
+		return "^" + strings.ToUpper(strings.TrimPrefix(msg.String(), "ctrl+"))
+	}
+	if msg.Type == tea.KeyRunes && !msg.Alt {
+		return string(msg.Runes)
+	}
+	return msg.String() // unmapped combination: nothing will be bound to it
 }
 
-// DefaultKeyMap is the newsboat-compatible default binding set.
-func DefaultKeyMap() KeyMap {
-	return KeyMap{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "down"),
-		),
-		First: key.NewBinding(
-			key.WithKeys("g", "home"),
-			key.WithHelp("g", "first"),
-		),
-		Last: key.NewBinding(
-			key.WithKeys("G", "end"),
-			key.WithHelp("G", "last"),
-		),
-		Redraw: key.NewBinding(
-			key.WithKeys("ctrl+r"),
-			key.WithHelp("Ctrl+R", "redraw"),
-		),
-		Quit: key.NewBinding(
-			key.WithKeys("q"),
-			key.WithHelp("q", "quit"),
-		),
-		Reload: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "reload"),
-		),
-		ReloadAll: key.NewBinding(
-			key.WithKeys("R"),
-			key.WithHelp("R", "reload all"),
-		),
-		OpenFeed: key.NewBinding(
-			key.WithKeys("enter", "l", "right"),
-			key.WithHelp("Enter", "open"),
-		),
-		Back: key.NewBinding(
-			key.WithKeys("q", "esc", "left", "h"),
-			key.WithHelp("q/Esc", "back"),
-		),
-		OpenArticle: key.NewBinding(
-			key.WithKeys("enter", "o"),
-			key.WithHelp("Enter/o", "open"),
-		),
-		ToggleRead: key.NewBinding(
-			key.WithKeys("m"),
-			key.WithHelp("m", "read"),
-		),
-		MarkAllRead: key.NewBinding(
-			key.WithKeys("A"),
-			key.WithHelp("A", "all read"),
-		),
+// contextOf returns the newsboat binding context of the currently
+// visible screen.
+func (m Model) contextOf() string {
+	switch m.screen {
+	case screenArticleList:
+		return config.CtxArticleList
+	case screenHelp:
+		return config.CtxHelp
+	default:
+		return config.CtxFeedList
 	}
 }
 
-// feedListHelp renders the one-line keymap footer for the feed list.
-func (k KeyMap) feedListHelp() string {
-	return joinHelp(k.Up, k.Down, k.First, k.Last, k.OpenFeed, k.Reload, k.ReloadAll, k.Quit)
+// lookupOp resolves the operation bound to msg in the active screen's
+// context (with the "all" fallback applied by config.Bindings).
+func (m Model) lookupOp(msg tea.KeyMsg) string {
+	return m.bindings.Lookup(m.contextOf(), newsboatKeyName(msg))
 }
 
-// articleListHelp renders the one-line keymap footer for the article list.
-func (k KeyMap) articleListHelp() string {
-	return joinHelp(k.Up, k.Down, k.First, k.Last, k.OpenArticle, k.ToggleRead, k.MarkAllRead, k.Back)
-}
-
-func joinHelp(bindings ...key.Binding) string {
-	parts := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		h := b.Help()
-		parts = append(parts, h.Key+" "+h.Desc)
+// footerHelp renders the one-line keymap footer for a context: for
+// each operation (in order) the first key bound to it in context, with
+// its short description. Ops with no bound key are skipped.
+func (m Model) footerHelp(context string, ops ...string) string {
+	var parts []string
+	for _, op := range ops {
+		if k := m.firstBoundKey(context, op); k != "" {
+			key := k
+			if key == " " {
+				key = "SPACE"
+			}
+			parts = append(parts, key+" "+shortDesc(op))
+		}
 	}
 	return strings.Join(parts, "  ")
+}
+
+// feedListHelp is the feed list footer.
+func (m Model) feedListHelp() string {
+	return m.footerHelp(config.CtxFeedList,
+		config.OpUp, config.OpDown, config.OpFirst, config.OpLast,
+		config.OpOpen, config.OpReload, config.OpReloadAll,
+		config.OpNextUnread, config.OpSetFilter, config.OpSearch, config.OpHelp, config.OpQuit,
+	)
+}
+
+// articleListHelp is the article list footer.
+func (m Model) articleListHelp() string {
+	return m.footerHelp(config.CtxArticleList,
+		config.OpUp, config.OpDown, config.OpFirst, config.OpLast,
+		config.OpOpen, config.OpToggleArticleRead, config.OpMarkFeedRead,
+		config.OpSetFilter, config.OpSearch, config.OpHelp, config.OpQuit,
+	)
+}
+
+// firstBoundKey returns the first candidate key bound to op in context
+// ("" when none is).
+func (m Model) firstBoundKey(context, op string) string {
+	for _, k := range candidateKeys {
+		if m.bindings.Lookup(context, k) == op {
+			return k
+		}
+	}
+	return ""
+}
+
+// shortDesc is a one-word-ish footer description (shorter than the
+// help table's opDescription).
+func shortDesc(op string) string {
+	if d, ok := shortOpDesc[op]; ok {
+		return d
+	}
+	return op
+}
+
+var shortOpDesc = map[string]string{
+	config.OpOpen:              "open",
+	config.OpQuit:              "quit",
+	config.OpHardQuit:          "quit!",
+	config.OpReload:            "reload",
+	config.OpReloadAll:         "reload all",
+	config.OpRedraw:            "redraw",
+	config.OpHelp:              "help",
+	config.OpUp:                "up",
+	config.OpDown:              "down",
+	config.OpPageUp:            "pgup",
+	config.OpPageDown:          "pgdn",
+	config.OpFirst:             "first",
+	config.OpLast:              "last",
+	config.OpNext:              "next",
+	config.OpPrev:              "prev",
+	config.OpNextUnread:        "next unread",
+	config.OpPrevUnread:        "prev unread",
+	config.OpMarkFeedRead:      "all read",
+	config.OpMarkAllFeedsRead:  "all feeds read",
+	config.OpToggleArticleRead: "read",
+	config.OpSearch:            "search",
+	config.OpSetFilter:         "filter",
+	config.OpClearFilter:       "clear filter",
+	config.OpSave:              "save",
+	config.OpOpenInBrowser:     "browser",
+	config.OpShowURLs:          "urls",
+}
+
+// opDescription returns a short human-readable description of an
+// operation for the help screen; unimplemented operations fall back to
+// the operation name itself so the table never lies about what is bound.
+func opDescription(op string) string {
+	if d, ok := opHelp[op]; ok {
+		return d
+	}
+	return op
+}
+
+// opHelp describes the operations the TUI implements. Everything else
+// that may be bound (enqueue, delete-article, ...) is accepted by the
+// config but does nothing yet and shows as its bare op name in help.
+var opHelp = map[string]string{
+	config.OpOpen:                   "Open feed/article",
+	config.OpQuit:                   "Return to previous dialog/quit",
+	config.OpHardQuit:               "Quit program, no confirmation",
+	config.OpReload:                 "Reload currently selected feed",
+	config.OpReloadAll:              "Reload all feeds",
+	config.OpRedraw:                 "Redraw screen",
+	config.OpHelp:                   "Open help screen",
+	config.OpUp:                     "Go up one item",
+	config.OpDown:                   "Go down one item",
+	config.OpPageUp:                 "Go up one page",
+	config.OpPageDown:               "Go down one page",
+	config.OpFirst:                  "Jump to first item",
+	config.OpLast:                   "Jump to last item",
+	config.OpNext:                   "Go to next entry",
+	config.OpPrev:                   "Go to previous entry",
+	config.OpNextUnread:             "Go to next unread article",
+	config.OpPrevUnread:             "Go to previous unread article",
+	config.OpMarkFeedRead:           "Mark feed read",
+	config.OpMarkAllFeedsRead:       "Mark all feeds read",
+	config.OpToggleArticleRead:      "Toggle read status for article",
+	config.OpToggleShowReadArticles: "Toggle showing read articles",
+	config.OpSearch:                 "Search articles",
+	config.OpSetFilter:              "Set a filter",
+	config.OpClearFilter:            "Clear currently set filter",
+	config.OpSave:                   "Save article (not implemented)",
+	config.OpOpenInBrowser:          "Open URL in browser (not implemented)",
+	config.OpShowURLs:               "Show URLs in article (not implemented)",
 }
