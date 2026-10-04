@@ -6,13 +6,13 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/71g3pf4c3/charss/internal/config"
 )
 
 var (
-	configFlag string
-	urlsFlag   string
+	configFlag  string
+	urlsFlag    string
+	browserFlag string
+	chafaFlag   string
 )
 
 // rootCmd runs the interactive TUI (the default, like newsboat's bare `newsboat`).
@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 	Short: "Terminal RSS reader (newsboat alternative) with chawan/chafa/sixel support",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load(configFlag, urlsFlag)
+		cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}
@@ -34,6 +34,10 @@ func init() {
 		"config file (default $XDG_CONFIG_HOME/charss/config)")
 	rootCmd.PersistentFlags().StringVar(&urlsFlag, "urls", "",
 		"feed list file (default $XDG_CONFIG_HOME/charss/urls)")
+	rootCmd.PersistentFlags().StringVar(&browserFlag, "browser", "",
+		"article browser/pager binary (overrides $CHARSS_BROWSER and the browser config option)")
+	rootCmd.PersistentFlags().StringVar(&chafaFlag, "chafa", "",
+		"image renderer binary (overrides $CHARSS_CHAFA and the chafa config option)")
 }
 
 // Execute runs the root command; it is the process entry point.

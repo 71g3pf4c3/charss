@@ -67,7 +67,7 @@ charss export <file.opml> # export the urls file as OPML
 charss version            # print build metadata
 ```
 
-Global flags, accepted by every subcommand: `--config <file>` and `--urls <file>` to override the default paths.
+Global flags, accepted by every subcommand: `--config <file>` and `--urls <file>` to override the default paths, plus `--browser <binary>` and `--chafa <binary>` to swap the article pager (chawan's `cha` by default) and the image renderer for one run. Precedence: flag → `$CHARSS_BROWSER` / `$CHARSS_CHAFA` → the `browser` / `chafa` config options.
 
 TUI keys: `j`/`k` or arrows to move, `Enter` to open, `r` to reload, `Ctrl+R` to redraw, `q` to quit.
 

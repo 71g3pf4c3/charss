@@ -20,7 +20,7 @@ var previewCmd = &cobra.Command{
 	Short: "Fetch an image and render it in the terminal (chafa/sixel)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load(configFlag, urlsFlag)
+		cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

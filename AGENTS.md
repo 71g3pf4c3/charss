@@ -48,7 +48,7 @@ CI (GitHub Actions) runs: gofmt check → vet → `go test -race` → build (`ci
 
 ## Layout
 
-- `cmd/` — cobra commands. `root.go` (runs TUI by default, like bare `newsboat`), `tui.go` (urls loading, refresh wiring, Program startup), `import.go` (OPML import/export), `podcast.go` (queue management CLI), `preview.go` (standalone chafa/sixel image preview), `version.go`.
+- `cmd/` — cobra commands. `root.go` (runs TUI by default, like bare `newsboat`), `tui.go` (urls loading, refresh wiring, Program startup), `import.go` (OPML import/export), `podcast.go` (queue management CLI), `preview.go` (standalone chafa/sixel image preview), `version.go`, `overrides.go` (single loadConfig with the `--browser`/`--chafa` → `CHARSS_BROWSER`/`CHARSS_CHAFA` → config option precedence — never load config without it).
 - `internal/version/` — build metadata vars, injected via ldflags in `.goreleaser.yaml` AND `nix/package.nix`. Change the import path there if the module path changes.
 - `internal/urls/` — newsboat-compatible urls-file parser + `Format` (roundtrips with `Parse`). Has table tests — extend them when adding fields.
 - `internal/config/` — newsboat-syntax config (NOT TOML; viper is gone): `key value` lines, `bind-key`/`unbind-key`, `macro`, `color`, `include` (cycle-guarded). Options map + `Bindings.Lookup(context, key)` + defaults per context. Legacy `config.toml` still parsed as fallback. A missing config file is not an error; a malformed one is.
