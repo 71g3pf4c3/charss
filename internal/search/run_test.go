@@ -322,7 +322,12 @@ func TestRunCarriesArticle(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d results, want 1", len(got))
 	}
-	if got[0].Article != want {
+	// feed.Article contains a slice (Enclosures), so compare field-wise
+	// instead of != on the whole struct.
+	if got[0].Article.ID != want.ID ||
+		got[0].Article.Title != want.Title ||
+		got[0].Article.ContentHTML != want.ContentHTML ||
+		!got[0].Article.Published.Equal(want.Published) {
 		t.Errorf("Article = %+v, want %+v", got[0].Article, want)
 	}
 }
