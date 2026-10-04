@@ -19,13 +19,14 @@ import (
 	"slices"
 )
 
-// DefaultBinary is the binary looked up on $PATH when Options.Binary is empty.
-const DefaultBinary = "chawan"
+// DefaultBinary is the binary looked up on $PATH when Options.Binary is
+// empty. The chawan distribution installs its executable as `cha`.
+const DefaultBinary = "cha"
 
 // Options configures the chawan driver.
 type Options struct {
 	// Binary is the path to the chawan executable. Empty means look up
-	// "chawan" on $PATH; no other default guessing is done.
+	// "cha" on $PATH; no other default guessing is done.
 	Binary string
 
 	// Args are extra arguments passed to chawan before the target

@@ -1,9 +1,10 @@
 package config
 
 // Default option values (newsboat's `browser` default is a wart away from
-// our requirement: charss renders via chawan).
+// our requirement: charss renders via chawan). The chawan distribution
+// installs its binary as `cha`, so that is the default browser command.
 const (
-	DefaultBrowser = "chawan"
+	DefaultBrowser = "cha"
 	DefaultChafa   = "chafa"
 )
 

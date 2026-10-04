@@ -96,7 +96,7 @@ in
       );
       default = { };
       example = {
-        browser = "chawan";
+        browser = "cha";
         auto-reload = true;
         reload-time = 30;
         notify-screen = true;

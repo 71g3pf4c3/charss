@@ -102,7 +102,7 @@
                 programs.charss = {
                   enable = true;
                   settings = {
-                    browser = "chawan";
+                    browser = "cha";
                     auto-reload = true;
                     reload-time = 30;
                     notify-screen = true;
@@ -155,7 +155,7 @@
               || fail "legacy config.toml must not be written"
 
             line "$conf" 'auto-reload yes'
-            line "$conf" 'browser "chawan"'
+            line "$conf" 'browser "cha"'
             line "$conf" 'notify-screen yes'
             line "$conf" 'reload-time 30'
             line "$conf" 'show-read-articles no'

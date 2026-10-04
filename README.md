@@ -31,7 +31,7 @@ Or grab a tarball from GitHub Releases: linux and darwin, amd64 and arm64. Windo
 
 Both must be on `$PATH`:
 
-- [chawan](https://chawan.net) — renders article HTML.
+- [chawan](https://chawan.net) — renders article HTML. Installs its binary as `cha`.
 - [chafa](https://hpjansson.org/chafa/) — converts images to terminal output.
 
 For sixel output you need a sixel-capable terminal: foot, xterm (`xterm-sixel`), wezterm, contour, rio, st, or mintty. Elsewhere charss falls back to symbol-based rendering; kitty graphics must be requested explicitly.
@@ -41,7 +41,7 @@ For sixel output you need a sixel-capable terminal: foot, xterm (`xterm-sixel`),
 Config file: `$XDG_CONFIG_HOME/charss/config` — newsboat syntax: `key value` lines, `bind-key`, `unbind-key`, `macro`, `color`, `include`; `#` starts a comment. Defaults apply if the file is missing; a malformed file is an error. A leftover legacy `config.toml` is ignored with a warning.
 
 ```
-browser "chawan"     # binary used to render articles
+browser "cha"        # binary used to render articles (chawan's executable)
 chafa "chafa"        # binary used to convert images
 auto-reload yes      # refresh feeds in the background
 reload-time 30       # auto-reload interval, minutes

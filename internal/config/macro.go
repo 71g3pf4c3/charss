@@ -3,8 +3,8 @@ package config
 import "strings"
 
 // MacroOp is a single operation inside a macro: the operation name plus an
-// optional raw argument (e.g. `set browser "chawan"` becomes
-// Op "set", Arg `browser chawan`). Arguments are stored raw; the executor
+// optional raw argument (e.g. `set browser "cha"` becomes
+// Op "set", Arg `browser cha`). Arguments are stored raw; the executor
 // interprets them.
 type MacroOp struct {
 	Op  string
