@@ -111,7 +111,10 @@ func (c *Chawan) show(ctx context.Context, target string) error {
 		return fmt.Errorf("render: starting chawan: %w", err)
 	}
 
-	waitErr := cmd.Wait() // always called, even when cancelled/killed
+	// chawan reads stdin interactively, but Setpgid put it in a
+	// background process group — hand the terminal's foreground group
+	// over for the duration of the run (see runForeground).
+	waitErr := runForeground(os.Stdin.Fd(), cmd.Process.Pid, cmd.Wait)
 	if waitErr == nil {
 		return nil
 	}
