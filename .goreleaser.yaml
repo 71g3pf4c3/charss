@@ -1,0 +1,54 @@
+# GoReleaser config for charss.
+# Docs: https://goreleaser.com
+version: 2
+
+project_name: charss
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: charss
+    main: .
+    binary: charss
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # sixel/chawan/chafa are terminal-unix concerns; windows is out of scope
+    # by design (see AGENTS.md).
+    ldflags:
+      - -s -w
+      - -X github.com/71g3pf4c3/charss/internal/version.version={{.Version}}
+      - -X github.com/71g3pf4c3/charss/internal/version.commit={{.Commit}}
+      - -X github.com/71g3pf4c3/charss/internal/version.date={{.Date}}
+
+archives:
+  - id: charss
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  draft: true
