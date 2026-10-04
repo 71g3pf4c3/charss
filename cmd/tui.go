@@ -7,6 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/71g3pf4c3/charss/internal/config"
+	"github.com/71g3pf4c3/charss/internal/feed"
+	"github.com/71g3pf4c3/charss/internal/render"
+	"github.com/71g3pf4c3/charss/internal/store"
 	"github.com/71g3pf4c3/charss/internal/tui"
 	"github.com/71g3pf4c3/charss/internal/urls"
 )
@@ -18,14 +21,30 @@ func runTUI(cfg *config.Config) error {
 		return err
 	}
 
-	m := tui.New(feeds)
-	if warn != "" {
-		// A missing urls file is not fatal (newsboat treats it the same way
-		// and shows an empty list); surface it in the UI later.
-		_ = warn
+	// Per-feed cache under $XDG_CACHE_HOME/charss/feeds (store.Open("")
+	// resolves it via os.UserCacheDir). Creation failure is fatal: the
+	// reader is useless without persistence.
+	st, err := store.Open("")
+	if err != nil {
+		return err
 	}
 
+	// The terminal adapter is attached to the program after NewProgram:
+	// tea.NewProgram copies the model, so the adapter must be a shared
+	// pointer for every model copy to see it.
+	term := &tui.ProgramTerminal{}
+
+	m := tui.New(tui.Options{
+		Feeds:    feeds,
+		Browser:  render.New(render.Options{Binary: cfg.Browser}),
+		Fetcher:  feed.NewFetcher(),
+		Store:    st,
+		Terminal: term,
+		Warning:  warn, // missing urls file: empty list, not an error
+	})
+
 	p := tea.NewProgram(m, tea.WithAltScreen())
+	term.Attach(p)
 	_, err = p.Run()
 	return err
 }
