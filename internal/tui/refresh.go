@@ -104,6 +104,12 @@ func saveStateCmd(s Storer, feedURL string, st store.State) tea.Cmd {
 
 // applyRefreshed folds one refresh result into the model state and
 // returns the save command.
+//
+// While a batch refresh is still in flight (m.refreshing > 0) no status is
+// written: per-feed messages would spam the status line and could overwrite
+// an unrelated error (e.g. a browser-not-found from opening an article).
+// Progress is shown by the header badge; the final feed's result becomes
+// the status message.
 func (m Model) applyRefreshed(msg refreshedMsg) (tea.Model, tea.Cmd) {
 	if m.refreshing > 0 {
 		m.refreshing--
@@ -120,9 +126,12 @@ func (m Model) applyRefreshed(msg refreshedMsg) (tea.Model, tea.Cmd) {
 			st.lastModified = msg.res.LastModified
 		}
 		st.lastFetched = msg.res.LastFetched
-		m.status = fmt.Sprintf("%s: up to date", title)
+		if m.refreshing == 0 {
+			m.status = fmt.Sprintf("%s: up to date", title)
+		}
 
 	case msg.err != nil:
+		// Fetch errors are sticky: they survive the rest of the batch.
 		// Nothing changed; keep the cached articles and report.
 		m.status = fmt.Sprintf("%s: %v", title, msg.err)
 		return m, nil
@@ -132,12 +141,11 @@ func (m Model) applyRefreshed(msg refreshedMsg) (tea.Model, tea.Cmd) {
 		st.etag = msg.res.ETag
 		st.lastModified = msg.res.LastModified
 		st.lastFetched = msg.res.LastFetched
-		m.status = fmt.Sprintf("%s: %d articles", title, len(st.articles))
+		if m.refreshing == 0 {
+			m.status = fmt.Sprintf("%s: %d articles", title, len(st.articles))
+		}
 	}
 
-	if m.refreshing > 0 {
-		m.status = fmt.Sprintf("refreshing… %d left", m.refreshing)
-	}
 	return m, saveStateCmd(m.store, msg.feed.URL, st.toStore())
 }
 

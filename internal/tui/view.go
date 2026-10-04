@@ -70,11 +70,19 @@ func (m Model) listRows() int {
 }
 
 func (m Model) statusLine() string {
-	if m.refreshing > 0 {
-		return refreshStyle.Render(fmt.Sprintf("⟳ refreshing… %d left", m.refreshing))
-	}
+	// The status line belongs to messages and errors only. Refresh progress
+	// lives in the header (refreshBadge) so a long refresh can never
+	// hide an error like "chawan not found".
 	if m.status != "" {
 		return statusStyle.Render(truncate(m.status, maxInt(1, m.width)))
+	}
+	return ""
+}
+
+// refreshBadge is the in-flight refresh counter shown in the screen header.
+func (m Model) refreshBadge() string {
+	if m.refreshing > 0 {
+		return " " + refreshStyle.Render(fmt.Sprintf("⟳ %d", m.refreshing))
 	}
 	return ""
 }
@@ -87,6 +95,7 @@ func (m Model) feedListView() string {
 		header += fmt.Sprintf("  (%d unread)", n)
 	}
 	b.WriteString(titleStyle.Render(header))
+	b.WriteString(m.refreshBadge())
 	b.WriteString("\n\n")
 
 	if len(m.feeds) == 0 {
@@ -140,6 +149,7 @@ func (m Model) articleListView() string {
 		}
 	}
 	b.WriteString(titleStyle.Render(header))
+	b.WriteString(m.refreshBadge())
 	b.WriteString("\n\n")
 
 	arts := articlesOf(st)

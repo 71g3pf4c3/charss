@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -34,19 +35,39 @@ func runTUI(cfg *config.Config) error {
 	// pointer for every model copy to see it.
 	term := &tui.ProgramTerminal{}
 
+	warnBrowser := checkBrowser(cfg.Browser)
+	if warn != "" && warnBrowser != "" {
+		warn = warn + "; " + warnBrowser
+	} else if warnBrowser != "" {
+		warn = warnBrowser
+	}
+
 	m := tui.New(tui.Options{
 		Feeds:    feeds,
 		Browser:  render.New(render.Options{Binary: cfg.Browser}),
 		Fetcher:  feed.NewFetcher(),
 		Store:    st,
 		Terminal: term,
-		Warning:  warn, // missing urls file: empty list, not an error
+		Warning:  warn, // missing urls file / missing browser: warnings, not errors
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	term.Attach(p)
 	_, err = p.Run()
 	return err
+}
+
+// checkBrowser returns a warning when the configured article browser is
+// not on PATH. Articles are rendered externally (chawan); without it,
+// opening an article can only fail — say so up front, not after the fact.
+func checkBrowser(binary string) string {
+	if binary == "" {
+		binary = "chawan"
+	}
+	if _, err := exec.LookPath(binary); err != nil {
+		return fmt.Sprintf("browser %q not found — install chawan (https://chawan.net) or set `browser` in the config", binary)
+	}
+	return ""
 }
 
 // loadFeeds reads and parses the urls file. A missing file yields an empty

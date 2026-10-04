@@ -716,17 +716,18 @@ func TestViewSmoke(t *testing.T) {
 	}
 }
 
-func TestStatusLinePrefersRefreshIndicator(t *testing.T) {
+func TestStatusLineSurvivesRefresh(t *testing.T) {
 	m := New(Options{})
 	m = sized(m)
-	m.status = "stale status"
-	v := m.View()
-	if !contains(v, "stale status") {
-		t.Error("status should render")
-	}
+	m.status = "chawan not found — install from https://chawan.net"
 	m.refreshing = 3
-	if !contains(m.View(), "refreshing") {
-		t.Error("an in-flight refresh should take over the status line")
+
+	v := m.View()
+	if !contains(v, "chawan not found") {
+		t.Error("an in-flight refresh must not hide the status message")
+	}
+	if !contains(v, "⟳ 3") {
+		t.Error("the refresh counter should render in the header badge")
 	}
 }
 
