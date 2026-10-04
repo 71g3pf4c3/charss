@@ -13,40 +13,59 @@ import (
 	"github.com/71g3pf4c3/charss/internal/feed"
 )
 
-// articleOpenedMsg is delivered after chawan has exited and the terminal
-// has been handed back. err is nil when the article was displayed and
-// chawan exited 0; otherwise it carries the chawan error (which includes
-// the install hint when the binary is missing) and/or a restore failure.
+// articleOpenedMsg is delivered after the external browser has exited and
+// the terminal has been handed back — for both article display and URL
+// opens. err is nil when the browser exited 0; otherwise it carries the
+// browser error (which includes the install hint when the binary is
+// missing) and/or a restore failure.
 type articleOpenedMsg struct {
 	err error
 }
 
-// openArticleCmd implements the Bubble Tea ↔ chawan terminal handoff:
+// handoffCmd implements the Bubble Tea ↔ external-browser terminal
+// handoff shared by article display and URL opens:
 //
 //  1. release the terminal (Bubble Tea suspends its input reader and
 //     renderer, and restores the underlying terminal state);
-//  2. run chawan in the foreground — it owns the terminal while running;
-//  3. restore the terminal (Bubble Tea re-captures input, re-enters the
-//     alt screen and repaints);
+//  2. run run in the foreground — the browser owns the terminal while
+//     it runs;
+//  3. restore the terminal (Bubble Tea re-captures input, re-enters
+//     the alt screen and repaints);
 //  4. report the outcome as a message, never by panicking.
 //
-// The restore is best-effort on every path: even if chawan fails, the
-// TUI must come back to draw the status line. Release failures abort the
-// handoff before anything is spawned.
-func openArticleCmd(term Terminal, b Browser, html string) tea.Cmd {
+// The restore is best-effort on every path: even if the browser fails,
+// the TUI must come back to draw the status line. Release failures abort
+// the handoff before anything is spawned.
+func handoffCmd(term Terminal, run func() error) tea.Cmd {
 	return func() tea.Msg {
 		if err := term.Release(); err != nil {
 			return articleOpenedMsg{err: fmt.Errorf("releasing terminal: %w", err)}
 		}
 
 		// No timeout: reading time is the user's, as in newsboat.
-		err := b.ShowHTML(context.Background(), html)
+		err := run()
 
 		if rerr := term.Restore(); rerr != nil {
 			err = errors.Join(err, fmt.Errorf("restoring terminal: %w", rerr))
 		}
 		return articleOpenedMsg{err: err}
 	}
+}
+
+// openArticleCmd hands the terminal to chawan to display an article.
+func openArticleCmd(term Terminal, b Browser, html string) tea.Cmd {
+	return handoffCmd(term, func() error {
+		return b.ShowHTML(context.Background(), html)
+	})
+}
+
+// openURLCmd hands the terminal to the browser to display a URL (feed
+// link, article link, URL-view selection) — the same handoff, so the
+// degenerate-WindowSizeMsg guard and status handling apply unchanged.
+func openURLCmd(term Terminal, b Browser, url string) tea.Cmd {
+	return handoffCmd(term, func() error {
+		return b.ShowURL(context.Background(), url)
+	})
 }
 
 // articleHTML assembles a minimal standalone HTML document for the

@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/71g3pf4c3/charss/internal/config"
 	"github.com/71g3pf4c3/charss/internal/feed"
 	"github.com/71g3pf4c3/charss/internal/store"
 	"github.com/71g3pf4c3/charss/internal/urls"
@@ -63,14 +66,21 @@ func (t *fakeTerminal) Restore() error {
 	return t.restoreErr
 }
 
-// fakeBrowser records the HTML shown to chawan.
+// fakeBrowser records the HTML shown to chawan and the URLs opened in
+// the browser.
 type fakeBrowser struct {
 	htmls []string
+	urls  []string
 	err   error
 }
 
 func (b *fakeBrowser) ShowHTML(_ context.Context, html string) error {
 	b.htmls = append(b.htmls, html)
+	return b.err
+}
+
+func (b *fakeBrowser) ShowURL(_ context.Context, url string) error {
+	b.urls = append(b.urls, url)
 	return b.err
 }
 
@@ -88,11 +98,54 @@ func keyMsg(k string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	case "left":
 		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "ctrl+f":
+		return tea.KeyMsg{Type: tea.KeyCtrlF}
+	case "ctrl+l":
+		return tea.KeyMsg{Type: tea.KeyCtrlL}
+	case "home":
+		return tea.KeyMsg{Type: tea.KeyHome}
+	case "end":
+		return tea.KeyMsg{Type: tea.KeyEnd}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 	}
+}
+
+// testConfig loads a config from extra directives (none = pure defaults
+// via an empty file, so the test never reads the developer's own
+// ~/.config/charss/config).
+func testConfig(t *testing.T, extra ...string) *config.Config {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	if len(extra) > 0 {
+		if err := os.WriteFile(path, []byte(strings.Join(extra, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := config.Load(path, filepath.Join(dir, "urls"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// newTUI builds a model with the default bindings applied, like the
+// real cmd/tui.go always passes the loaded config.
+func newTUI(t *testing.T, opts Options) Model {
+	t.Helper()
+	if opts.Config == nil {
+		opts.Config = testConfig(t)
+	}
+	return New(opts)
 }
 
 // press feeds keys to the model in order, returning the model and the
@@ -157,7 +210,7 @@ func setState(m *Model, feedURL string, arts []feed.Article, read map[string]boo
 // ---- feed list ---------------------------------------------------------
 
 func TestFeedListNavigation(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}, {URL: "b"}, {URL: "c"}}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}, {URL: "b"}, {URL: "c"}}})
 
 	m, _ = press(m, "j", "j")
 	if m.cursor != 2 {
@@ -186,7 +239,7 @@ func TestFeedListNavigation(t *testing.T) {
 }
 
 func TestQuit(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}})
 	m, cmd := press(m, "q")
 	if cmd == nil {
 		t.Fatal("q should quit")
@@ -196,7 +249,7 @@ func TestQuit(t *testing.T) {
 	}
 
 	// ctrl+c must quit from any screen.
-	m = New(Options{Feeds: []urls.Feed{{URL: "a"}}})
+	m = newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}})
 	m, _ = press(m, "enter")
 	if m.screen != screenArticleList {
 		t.Fatal("precondition: should be on the article list")
@@ -208,7 +261,7 @@ func TestQuit(t *testing.T) {
 }
 
 func TestEmptyFeedListIsSafe(t *testing.T) {
-	m := New(Options{})
+	m := newTUI(t, Options{})
 	m = sized(m)
 
 	m, cmd := press(m, "enter")
@@ -230,7 +283,7 @@ func TestEmptyFeedListIsSafe(t *testing.T) {
 
 func TestOpenArticleListAndBack(t *testing.T) {
 	feeds := []urls.Feed{{URL: "https://a/feed", Title: "Feed A"}, {URL: "https://b/feed"}}
-	m := New(Options{Feeds: feeds})
+	m := newTUI(t, Options{Feeds: feeds})
 
 	m, _ = press(m, "l") // same as Enter
 	if m.screen != screenArticleList || m.active != "https://a/feed" {
@@ -260,7 +313,7 @@ func TestOpenArticleListAndBack(t *testing.T) {
 }
 
 func TestArticleListNavigation(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}})
 	setState(&m, "a", []feed.Article{art("1", t1, ""), art("2", t2, ""), art("3", t0, "")}, map[string]bool{})
 	m, _ = press(m, "enter")
 
@@ -284,7 +337,7 @@ func TestArticleListNavigation(t *testing.T) {
 
 func TestToggleRead(t *testing.T) {
 	st := newFakeStore()
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}, Store: st})
 	setState(&m, "a", []feed.Article{art("1", t1, "one"), art("2", t2, "two")}, map[string]bool{})
 	m, _ = press(m, "enter")
 
@@ -309,7 +362,7 @@ func TestToggleRead(t *testing.T) {
 
 func TestMarkAllRead(t *testing.T) {
 	st := newFakeStore()
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}, Store: st})
 	setState(&m, "a", []feed.Article{art("1", t1, ""), art("2", t2, "")}, map[string]bool{})
 	m, _ = press(m, "enter")
 
@@ -327,7 +380,7 @@ func TestMarkAllRead(t *testing.T) {
 }
 
 func TestOpenArticleOnEmptyList(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}, Browser: &fakeBrowser{}, Terminal: &fakeTerminal{}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}, Browser: &fakeBrowser{}, Terminal: &fakeTerminal{}})
 	m, _ = press(m, "enter") // no state: empty article list
 
 	m, cmd := press(m, "enter")
@@ -348,7 +401,7 @@ func openReadyModel(t *testing.T) (Model, *fakeBrowser, *fakeTerminal) {
 	t.Helper()
 	b := &fakeBrowser{}
 	term := &fakeTerminal{}
-	m := New(Options{
+	m := newTUI(t, Options{
 		Feeds:    []urls.Feed{{URL: "a", Title: "Feed A"}},
 		Browser:  b,
 		Terminal: term,
@@ -484,7 +537,7 @@ func TestRefreshSingleFeed(t *testing.T) {
 		}, nil
 	})
 
-	m := New(Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
 	setState(&m, "a", []feed.Article{art("o1", t0, "old")}, map[string]bool{"o1": true})
 
 	m, cmd := press(m, "r")
@@ -529,7 +582,7 @@ func TestRefreshSendsValidatorsAndMergesRead(t *testing.T) {
 		}, nil
 	})
 
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}, Fetcher: fetch, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}, Fetcher: fetch, Store: st})
 	setState(&m, "a", []feed.Article{art("o1", t0, "old")}, map[string]bool{"o1": true})
 	m.states["a"].etag = `"v2"`
 
@@ -554,7 +607,7 @@ func TestRefreshNotModified(t *testing.T) {
 		return feed.Fetched{Feed: f, ETag: `"v3"`}, feed.ErrNotModified
 	})
 
-	m := New(Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
 	old := []feed.Article{art("o1", t1, "old")}
 	setState(&m, "a", old, map[string]bool{"o1": true})
 	m.states["a"].etag = `"v2"`
@@ -583,7 +636,7 @@ func TestRefreshErrorKeepsCache(t *testing.T) {
 		return feed.Fetched{}, &feed.HTTPError{URL: f.URL, Status: 500}
 	})
 
-	m := New(Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
 	setState(&m, "a", []feed.Article{art("o1", t1, "old")}, map[string]bool{})
 
 	m, cmd := press(m, "r")
@@ -607,7 +660,7 @@ func TestRefreshAll(t *testing.T) {
 		return feed.Fetched{Feed: f, Articles: []feed.Article{art("x-"+f.URL, t2, "")}}, nil
 	})
 	feeds := []urls.Feed{{URL: "a"}, {URL: "b"}, {URL: "c"}}
-	m := New(Options{Feeds: feeds, Fetcher: fetch, Store: st})
+	m := newTUI(t, Options{Feeds: feeds, Fetcher: fetch, Store: st})
 
 	m, cmd := press(m, "R")
 	if m.refreshing != 3 {
@@ -649,7 +702,7 @@ func TestStartupLoadsCacheThenAutoRefreshes(t *testing.T) {
 		return feed.Fetched{Feed: f, ETag: `"v1"`}, feed.ErrNotModified
 	})
 
-	m := New(Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a", Title: "A"}}, Fetcher: fetch, Store: st})
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("Init should load cached state")
@@ -672,7 +725,7 @@ func TestStartupLoadsCacheThenAutoRefreshes(t *testing.T) {
 }
 
 func TestStartupWithoutStore(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}})
 	if cmd := m.Init(); cmd != nil {
 		t.Error("no store: Init should be a no-op, not crash or fetch")
 	}
@@ -681,7 +734,7 @@ func TestStartupWithoutStore(t *testing.T) {
 // ---- unread counting / view --------------------------------------------
 
 func TestUnreadCounting(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "a"}, {URL: "b"}, {URL: "c"}}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}, {URL: "b"}, {URL: "c"}}})
 	if got := m.unreadTotal(); got != 0 {
 		t.Fatalf("unread total = %d, want 0 with no state", got)
 	}
@@ -698,7 +751,7 @@ func TestUnreadCounting(t *testing.T) {
 }
 
 func TestViewSmoke(t *testing.T) {
-	m := New(Options{Feeds: []urls.Feed{{URL: "https://a/feed", Title: "Feed A"}}})
+	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "https://a/feed", Title: "Feed A"}}})
 	m = sized(m)
 	v := m.View()
 	if !contains(v, "Feed A") {
@@ -716,17 +769,18 @@ func TestViewSmoke(t *testing.T) {
 	}
 }
 
-func TestStatusLinePrefersRefreshIndicator(t *testing.T) {
-	m := New(Options{})
+func TestStatusLineSurvivesRefresh(t *testing.T) {
+	m := newTUI(t, Options{})
 	m = sized(m)
-	m.status = "stale status"
-	v := m.View()
-	if !contains(v, "stale status") {
-		t.Error("status should render")
-	}
+	m.status = "chawan not found — install from https://chawan.net"
 	m.refreshing = 3
-	if !contains(m.View(), "refreshing") {
-		t.Error("an in-flight refresh should take over the status line")
+
+	v := m.View()
+	if !contains(v, "chawan not found") {
+		t.Error("an in-flight refresh must not hide the status message")
+	}
+	if !contains(v, "⟳ 3") {
+		t.Error("the refresh counter should render in the header badge")
 	}
 }
 
@@ -735,7 +789,7 @@ func TestViewLongListScrolls(t *testing.T) {
 	for i := range feeds {
 		feeds[i] = urls.Feed{URL: fmt.Sprintf("https://f/%d", i), Title: fmt.Sprintf("Feed %02d", i)}
 	}
-	m := New(Options{Feeds: feeds})
+	m := newTUI(t, Options{Feeds: feeds})
 	m = sized(m)
 	m, _ = press(m, "G") // jump to the last feed
 

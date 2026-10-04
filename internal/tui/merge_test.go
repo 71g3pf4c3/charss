@@ -11,6 +11,7 @@ var (
 	t0 = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t1 = time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
 	t2 = time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+	t3 = time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)
 )
 
 func art(id string, published time.Time, title string) feed.Article {

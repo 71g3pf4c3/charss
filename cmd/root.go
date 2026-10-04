@@ -31,7 +31,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "",
-		"config file (default $XDG_CONFIG_HOME/charss/config.toml)")
+		"config file (default $XDG_CONFIG_HOME/charss/config)")
 	rootCmd.PersistentFlags().StringVar(&urlsFlag, "urls", "",
 		"feed list file (default $XDG_CONFIG_HOME/charss/urls)")
 }

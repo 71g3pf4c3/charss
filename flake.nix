@@ -87,8 +87,9 @@
         let
           pkgs = pkgsFor system;
           # Build the full HM activation with the module enabled and
-          # non-default settings/urls; this exercises option declarations,
-          # TOML/urls rendering and the default package path end to end.
+          # non-default settings/bindings/colors/macros/urls; this
+          # exercises option declarations, newsboat-syntax rendering
+          # and the default package path end to end.
           home = home-manager.lib.homeManagerConfiguration {
             inherit pkgs;
             modules = [
@@ -102,8 +103,35 @@
                   enable = true;
                   settings = {
                     browser = "chawan";
-                    chafa = "chafa";
+                    auto-reload = true;
+                    reload-time = 30;
+                    notify-screen = true;
+                    show-read-articles = false;
                   };
+                  bindings = [
+                    {
+                      key = "^";
+                      op = "toggle-flag";
+                    }
+                    {
+                      key = "m";
+                      op = "toggle-flag";
+                      context = "articlelist";
+                    }
+                  ];
+                  colors = [
+                    {
+                      element = "listnormal";
+                      fg = "red";
+                      bg = "black";
+                    }
+                  ];
+                  macros = {
+                    "," = "toggle-article-read; quit";
+                  };
+                  extraConfig = ''
+                    unbind-key J all
+                  '';
                   urls = [
                     ''https://example.com/feed.xml "Example" dev rss''
                   ];
@@ -111,9 +139,39 @@
               }
             ];
           };
+
+          # Assert the rendered files match what internal/config's
+          # tokenizer expects, line by line, and that the legacy
+          # config.toml is not written.
+          verifyConfig = pkgs.runCommand "charss-hm-config-verify" { } ''
+            conf="${home.activationPackage}/home-files/.config/charss/config"
+            urls="${home.activationPackage}/home-files/.config/charss/urls"
+            fail() { echo "hm-module content check: $1" >&2; exit 1; }
+            line() { grep -Fqx "$2" "$1" || fail "missing line in $1: $2"; }
+
+            [ -f "$conf" ] || fail "config not rendered"
+            [ -f "$urls" ] || fail "urls not rendered"
+            [ ! -e "${home.activationPackage}/home-files/.config/charss/config.toml" ] \
+              || fail "legacy config.toml must not be written"
+
+            line "$conf" 'auto-reload yes'
+            line "$conf" 'browser "chawan"'
+            line "$conf" 'notify-screen yes'
+            line "$conf" 'reload-time 30'
+            line "$conf" 'show-read-articles no'
+            line "$conf" 'bind-key ^ toggle-flag'
+            line "$conf" 'bind-key m toggle-flag articlelist'
+            line "$conf" 'color listnormal red black'
+            line "$conf" 'macro , toggle-article-read; quit'
+            line "$conf" 'unbind-key J all'
+            line "$urls" 'https://example.com/feed.xml "Example" dev rss'
+
+            touch "$out"
+          '';
         in
         {
           hm-module = home.activationPackage;
+          hm-module-config = verifyConfig;
         }
       );
 

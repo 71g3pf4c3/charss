@@ -104,6 +104,12 @@ func saveStateCmd(s Storer, feedURL string, st store.State) tea.Cmd {
 
 // applyRefreshed folds one refresh result into the model state and
 // returns the save command.
+//
+// While a batch refresh is still in flight (m.refreshing > 0) no status is
+// written: per-feed messages would spam the status line and could overwrite
+// an unrelated error (e.g. a browser-not-found from opening an article).
+// Progress is shown by the header badge; the final feed's result becomes
+// the status message.
 func (m Model) applyRefreshed(msg refreshedMsg) (tea.Model, tea.Cmd) {
 	if m.refreshing > 0 {
 		m.refreshing--
@@ -120,25 +126,45 @@ func (m Model) applyRefreshed(msg refreshedMsg) (tea.Model, tea.Cmd) {
 			st.lastModified = msg.res.LastModified
 		}
 		st.lastFetched = msg.res.LastFetched
-		m.status = fmt.Sprintf("%s: up to date", title)
+		if m.refreshing == 0 {
+			m.batchDoneStatus(fmt.Sprintf("%s: up to date", title))
+		}
 
 	case msg.err != nil:
+		// Fetch errors are sticky: they survive the rest of the batch.
 		// Nothing changed; keep the cached articles and report.
 		m.status = fmt.Sprintf("%s: %v", title, msg.err)
+		if m.refreshing == 0 {
+			m.batchNew = 0 // the batch ends with this error
+		}
 		return m, nil
 
 	default:
+		m.batchNew += countNewArticles(st.articles, msg.res.Articles)
 		st.articles, st.read = mergeArticles(st.articles, msg.res.Articles, st.read)
+		st.flags = pruneFlags(st.flags, st.articles)
 		st.etag = msg.res.ETag
 		st.lastModified = msg.res.LastModified
 		st.lastFetched = msg.res.LastFetched
-		m.status = fmt.Sprintf("%s: %d articles", title, len(st.articles))
+		if m.refreshing == 0 {
+			m.batchDoneStatus(fmt.Sprintf("%s: %d articles", title, len(st.articles)))
+		}
 	}
 
-	if m.refreshing > 0 {
-		m.status = fmt.Sprintf("refreshing… %d left", m.refreshing)
-	}
 	return m, saveStateCmd(m.store, msg.feed.URL, st.toStore())
+}
+
+// batchDoneStatus closes out a refresh batch: when notify-screen is on
+// and the batch brought new articles, the notification wins over the
+// final feed's status (noise-capped: a batch with no new articles never
+// notifies). Either way the counter resets for the next batch.
+func (m *Model) batchDoneStatus(normal string) {
+	if m.batchNew > 0 && m.notifyScreen {
+		m.status = fmt.Sprintf("%d new articles", m.batchNew)
+	} else {
+		m.status = normal
+	}
+	m.batchNew = 0
 }
 
 // feedTitle resolves a feed's display title: the urls-file title, or the

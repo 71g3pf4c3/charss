@@ -35,6 +35,15 @@ const rssFixture = `<?xml version="1.0"?>
     <link>https://example.com/2</link>
     <description>only a description</description>
   </item>
+  <item>
+    <title>Third</title>
+    <link>https://example.com/3</link>
+    <guid isPermaLink="false">guid-3</guid>
+    <description>podcast episode</description>
+    <enclosure url="https://example.com/audio/ep3.mp3" type="audio/mpeg" length="123"/>
+    <enclosure url="https://example.com/audio/ep3.ogg" type="audio/ogg"/>
+    <enclosure url="https://example.com/audio/ep3-bad.mp3" type="audio/mpeg" length="not-a-number"/>
+  </item>
 </channel>
 </rss>`
 
@@ -79,6 +88,18 @@ func TestFetchIfModified(t *testing.T) {
 			Title:       "Second",
 			URL:         "https://example.com/2",
 			ContentHTML: "only a description",
+		},
+		{
+			ID:          hashOf("guid-3"),
+			GUID:        "guid-3",
+			Title:       "Third",
+			URL:         "https://example.com/3",
+			ContentHTML: "podcast episode",
+			Enclosures: []Enclosure{
+				{URL: "https://example.com/audio/ep3.mp3", MimeType: "audio/mpeg", Size: 123},
+				{URL: "https://example.com/audio/ep3.ogg", MimeType: "audio/ogg", Size: -1},      // no length attr
+				{URL: "https://example.com/audio/ep3-bad.mp3", MimeType: "audio/mpeg", Size: -1}, // invalid length
+			},
 		},
 	}
 	atomWant := []Article{

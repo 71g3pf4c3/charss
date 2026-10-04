@@ -33,7 +33,7 @@ buildGoModule {
     "-X github.com/71g3pf4c3/charss/internal/version.date=${date}"
   ];
 
-  vendorHash = "sha256-zegWRNdkOUI78q2zTu5Tnsj+1BF8WM5LaEctuUbO7jk=";
+  vendorHash = "sha256-p+9EZu4axBWaGtEo/TqvOHsG85fqr12hO/s459EEUzY=";
 
   meta = {
     description = "Terminal RSS reader (newsboat alternative) with HTML rendering via chawan and images via chafa";
