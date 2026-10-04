@@ -28,6 +28,9 @@ go.work.sum
 # GoReleaser build output
 dist/
 
+# Nix build output symlink (flake.lock is committed, result is not)
+/result
+
 # env file
 .env
 
