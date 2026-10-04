@@ -38,11 +38,14 @@ For sixel output you need a sixel-capable terminal: foot, xterm (`xterm-sixel`),
 
 ## Configuration
 
-Config file: `$XDG_CONFIG_HOME/charss/config.toml` (defaults apply if missing; malformed TOML is an error):
+Config file: `$XDG_CONFIG_HOME/charss/config` — newsboat syntax: `key value` lines, `bind-key`, `unbind-key`, `macro`, `color`, `include`; `#` starts a comment. Defaults apply if the file is missing; a malformed file is an error. A leftover legacy `config.toml` is ignored with a warning.
 
-```toml
-browser = "chawan"  # binary used to render articles
-chafa = "chafa"     # binary used to convert images
+```
+browser "chawan"     # binary used to render articles
+chafa "chafa"        # binary used to convert images
+auto-reload yes      # refresh feeds in the background
+reload-time 30       # auto-reload interval, minutes
+notify-screen yes    # status-line notification on new articles
 ```
 
 Feed list: `$XDG_CONFIG_HOME/charss/urls` — a separate plain-text file in the newsboat format, one feed per line:
