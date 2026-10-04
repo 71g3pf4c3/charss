@@ -36,6 +36,8 @@ const (
 	OpNextUnreadFeed = "next-unread-feed"
 	OpPrevUnreadFeed = "prev-unread-feed"
 	OpRandomUnread   = "random-unread"
+	OpFirst          = "first" // charss additions beyond newsboat's op set: newsboat
+	OpLast           = "last"  // has home/end syskeys instead; charss binds g/G
 
 	// Feeds and articles.
 	OpOpenInBrowser                     = "open-in-browser"
@@ -57,6 +59,8 @@ const (
 	OpPurgeDeletedArticles              = "purge-deleted-articles"
 	OpSort                              = "sort"
 	OpSearch                            = "search"
+	OpSetFilter                         = "set-filter"
+	OpClearFilter                       = "clear-filter"
 	OpGotoURL                           = "goto-url"
 	OpEditURLs                          = "edit-urls"
 
@@ -103,6 +107,8 @@ var Operations = map[string]string{
 	OpNextUnreadFeed: OpNextUnreadFeed,
 	OpPrevUnreadFeed: OpPrevUnreadFeed,
 	OpRandomUnread:   OpRandomUnread,
+	OpFirst:          OpFirst,
+	OpLast:           OpLast,
 
 	OpOpenInBrowser:                     OpOpenInBrowser,
 	OpOpenInBrowserNoninteractively:     OpOpenInBrowserNoninteractively,
@@ -123,6 +129,8 @@ var Operations = map[string]string{
 	OpPurgeDeletedArticles:              OpPurgeDeletedArticles,
 	OpSort:                              OpSort,
 	OpSearch:                            OpSearch,
+	OpSetFilter:                         OpSetFilter,
+	OpClearFilter:                       OpClearFilter,
 	OpGotoURL:                           OpGotoURL,
 	OpEditURLs:                          OpEditURLs,
 
