@@ -61,7 +61,7 @@ func (c *Chawan) LookPath() (string, error) {
 		err = nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("chawan not found — install from https://chawan.net: %w", err)
+		return "", fmt.Errorf("browser %q not found — install chawan (https://chawan.net, binary `cha`) or set `browser` in the config: %w", name, err)
 	}
 	return path, nil
 }

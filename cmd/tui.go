@@ -79,7 +79,7 @@ func runTUI(cfg *config.Config) error {
 // opening an article can only fail — say so up front, not after the fact.
 func checkBrowser(binary string) string {
 	if binary == "" {
-		binary = "cha"
+		binary = render.DefaultBinary
 	}
 	if _, err := exec.LookPath(binary); err != nil {
 		return fmt.Sprintf("browser %q not found — install chawan (https://chawan.net, binary `cha`) or set `browser` in the config", binary)

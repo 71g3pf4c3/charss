@@ -50,6 +50,9 @@ func TestLookPathMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a missing binary")
 	}
+	if !strings.Contains(err.Error(), "browser") {
+		t.Errorf("error should name the missing browser, got: %v", err)
+	}
 	if !strings.Contains(err.Error(), "chawan") {
 		t.Errorf("error should mention chawan, got: %v", err)
 	}

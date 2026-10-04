@@ -6,18 +6,19 @@ The TUI itself never renders article HTML — it is a navigation and selection l
 
 ## Status
 
-Early development. Do not expect a usable reader yet.
+Early development — the core loop works day to day, but the config surface may still change.
 
 What exists and is tested:
 
 - Newsboat-compatible urls-file parser: feed URL, quoted title, tags, per-feed `"key: value"` pairs.
-- Feed engine: gofeed-based RSS/Atom fetching with conditional requests (`ETag` / `Last-Modified`), typed HTTP/parse errors, and a JSON per-feed cache with atomic writes under `$XDG_CACHE_HOME/charss/feeds/` (articles, read flags, validators).
-- Chawan driver: spawns chawan on a temp file or URL, inherits the terminal, tears down the whole process group on cancel.
-- Image pipeline: HTTP image fetch plus chafa conversion with sixel as the default format; format detection from `$TERM`; kitty and symbols are fallbacks only.
-- OPML import/export (`import` merges by default, `--replace` rewrites; `export` refuses to clobber the urls file itself).
-- Feed-list TUI: j/k navigation, q to quit. Opening articles and reloading feeds are stubs.
-
-Not yet done: the pieces above are not wired together. The TUI does not fetch feeds, show article lists, or launch chawan/chafa yet.
+- Newsboat-syntax config: `key value` options, `bind-key`/`unbind-key`, `macro`, `color`, `include`, with per-context bindings, colors and defaults.
+- Feed engine: gofeed-based RSS/Atom fetching with conditional requests (`ETag` / `Last-Modified`), typed HTTP/parse errors, enclosures.
+- SQLite cache (`$XDG_CACHE_HOME/charss/charss.db`, WAL): articles, read and custom flags; one-time migration from the old JSON cache.
+- TUI: feed list → article list → article in chawan (terminal handoff); filters, full-text search, query feeds, sort orders, help screen, macros, URL view, save-article, open-in-browser, podcast enqueue, auto-reload and new-article notifications.
+- Chawan driver: spawns the browser on a temp file or URL, inherits the terminal, tears down the whole process group on cancel.
+- Image pipeline: HTTP image fetch plus chafa conversion with sixel as the default format; kitty and symbols are fallbacks only.
+- Podcast download queue with resume (`charss podcast`), OPML import/export.
+- Nix flake (package, devShell with real chawan + chafa) and a Home Manager module rendering the newsboat-syntax config; CI and GoReleaser draft releases on `v*` tags.
 
 ## Install
 
