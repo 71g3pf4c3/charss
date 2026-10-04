@@ -48,6 +48,7 @@ func runTUI(cfg *config.Config) error {
 		Fetcher:  feed.NewFetcher(),
 		Store:    st,
 		Terminal: term,
+		Config:   cfg,  // bindings, colors and options drive the TUI
 		Warning:  warn, // missing urls file / missing browser: warnings, not errors
 	})
 
