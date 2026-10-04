@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/gofeed"
@@ -22,15 +24,24 @@ import (
 	"github.com/71g3pf4c3/charss/internal/version"
 )
 
+// Enclosure is a media attachment on an article (RSS <enclosure>, or an
+// Atom link with rel="enclosure").
+type Enclosure struct {
+	URL      string `json:"url,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+	Size     int64  `json:"size"` // bytes, from the length attribute; -1 = unknown
+}
+
 // Article is one parsed feed item.
 type Article struct {
-	ID          string    `json:"id"` // stable hash of GUID (preferred) or URL
-	GUID        string    `json:"guid,omitempty"`
-	Title       string    `json:"title,omitempty"`
-	URL         string    `json:"url,omitempty"`          // link
-	ContentHTML string    `json:"content_html,omitempty"` // content:encoded, or description if richer/only
-	Author      string    `json:"author,omitempty"`
-	Published   time.Time `json:"published,omitzero"`
+	ID          string      `json:"id"` // stable hash of GUID (preferred) or URL
+	GUID        string      `json:"guid,omitempty"`
+	Title       string      `json:"title,omitempty"`
+	URL         string      `json:"url,omitempty"`          // link
+	ContentHTML string      `json:"content_html,omitempty"` // content:encoded, or description if richer/only
+	Author      string      `json:"author,omitempty"`
+	Published   time.Time   `json:"published,omitzero"`
+	Enclosures  []Enclosure `json:"enclosures,omitempty"`
 }
 
 // Fetched is the result of a successful (or 304) fetch.
@@ -208,6 +219,7 @@ func articlesFrom(f *gofeed.Feed) []Article {
 			a.ContentHTML = item.Description
 		}
 		a.Author = authorOf(item)
+		a.Enclosures = enclosuresFrom(item)
 		switch {
 		case item.PublishedParsed != nil:
 			a.Published = *item.PublishedParsed
@@ -218,6 +230,29 @@ func articlesFrom(f *gofeed.Feed) []Article {
 		articles = append(articles, a)
 	}
 	return articles
+}
+
+// enclosuresFrom maps gofeed enclosures, keeping only ones with a URL.
+// A missing or unparsable length becomes Size -1 (unknown).
+func enclosuresFrom(item *gofeed.Item) []Enclosure {
+	if len(item.Enclosures) == 0 {
+		return nil
+	}
+	out := make([]Enclosure, 0, len(item.Enclosures))
+	for _, e := range item.Enclosures {
+		if e == nil || e.URL == "" {
+			continue
+		}
+		size := int64(-1)
+		if n, err := strconv.ParseInt(strings.TrimSpace(e.Length), 10, 64); err == nil && n >= 0 {
+			size = n
+		}
+		out = append(out, Enclosure{URL: e.URL, MimeType: e.Type, Size: size})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func authorOf(item *gofeed.Item) string {
