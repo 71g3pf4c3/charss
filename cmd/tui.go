@@ -9,6 +9,7 @@ import (
 
 	"github.com/71g3pf4c3/charss/internal/config"
 	"github.com/71g3pf4c3/charss/internal/feed"
+	"github.com/71g3pf4c3/charss/internal/podcast"
 	"github.com/71g3pf4c3/charss/internal/render"
 	"github.com/71g3pf4c3/charss/internal/store"
 	"github.com/71g3pf4c3/charss/internal/tui"
@@ -35,6 +36,20 @@ func runTUI(cfg *config.Config) error {
 	// pointer for every model copy to see it.
 	term := &tui.ProgramTerminal{}
 
+	// Podcast queue (same cache dir as the store). A failure to open it
+	// is a warning: enqueue reports "queue unavailable" instead of
+	// crashing the reader over a cache-dir problem.
+	queue, qerr := podcast.OpenQueue("")
+	if qerr != nil {
+		warnQueue := fmt.Sprintf("podcast queue: %v", qerr)
+		if warn != "" {
+			warn = warn + "; " + warnQueue
+		} else {
+			warn = warnQueue
+		}
+		queue = nil
+	}
+
 	warnBrowser := checkBrowser(cfg.Browser)
 	if warn != "" && warnBrowser != "" {
 		warn = warn + "; " + warnBrowser
@@ -48,8 +63,9 @@ func runTUI(cfg *config.Config) error {
 		Fetcher:  feed.NewFetcher(),
 		Store:    st,
 		Terminal: term,
-		Config:   cfg,  // bindings, colors and options drive the TUI
-		Warning:  warn, // missing urls file / missing browser: warnings, not errors
+		Enqueue:  queue, // nil on open failure; the op degrades to a status
+		Config:   cfg,   // bindings, colors and options drive the TUI
+		Warning:  warn,  // missing urls file / missing browser: warnings, not errors
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen())

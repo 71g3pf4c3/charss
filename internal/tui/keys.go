@@ -59,13 +59,16 @@ func newsboatKeyName(msg tea.KeyMsg) string {
 }
 
 // contextOf returns the newsboat binding context of the currently
-// visible screen.
+// visible screen. The URL view uses the dialog context (newsboat's
+// urlview equivalent).
 func (m Model) contextOf() string {
 	switch m.screen {
 	case screenArticleList:
 		return config.CtxArticleList
 	case screenHelp:
 		return config.CtxHelp
+	case screenURLView:
+		return config.CtxDialog
 	default:
 		return config.CtxFeedList
 	}
@@ -153,12 +156,15 @@ var shortOpDesc = map[string]string{
 	config.OpMarkFeedRead:      "all read",
 	config.OpMarkAllFeedsRead:  "all feeds read",
 	config.OpToggleArticleRead: "read",
+	config.OpToggleFlag:        "flag",
 	config.OpSearch:            "search",
 	config.OpSetFilter:         "filter",
 	config.OpClearFilter:       "clear filter",
 	config.OpSave:              "save",
 	config.OpOpenInBrowser:     "browser",
 	config.OpShowURLs:          "urls",
+	config.OpEnqueue:           "enqueue",
+	config.OpRunMacro:          "macro",
 }
 
 // opDescription returns a short human-readable description of an
@@ -199,7 +205,10 @@ var opHelp = map[string]string{
 	config.OpSearch:                 "Search articles",
 	config.OpSetFilter:              "Set a filter",
 	config.OpClearFilter:            "Clear currently set filter",
-	config.OpSave:                   "Save article (not implemented)",
-	config.OpOpenInBrowser:          "Open URL in browser (not implemented)",
-	config.OpShowURLs:               "Show URLs in article (not implemented)",
+	config.OpSave:                   "Save article to a file",
+	config.OpOpenInBrowser:          "Open URL in browser",
+	config.OpShowURLs:               "Show URLs in article",
+	config.OpToggleFlag:             "Toggle a flag on the article",
+	config.OpEnqueue:                "Add enclosure to podcast queue",
+	config.OpRunMacro:               "Run a macro",
 }

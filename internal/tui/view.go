@@ -18,6 +18,8 @@ func (m Model) View() string {
 		v = m.articleListView()
 	case screenHelp:
 		v = m.helpView()
+	case screenURLView:
+		v = m.urlView()
 	default:
 		v = m.feedListView()
 	}
@@ -201,7 +203,10 @@ func (m Model) activeAllRefs() []articleRef {
 }
 
 func (m Model) articleLine(r articleRef, selected bool) string {
-	// Line layout: "N Jan 02  Title…". Keep the column budget in sync.
+	// Line layout: "N Jan 02  [a] Title…". Keep the column budget in
+	// sync. The flag marker is newsboat's [a] style; unflagged articles
+	// render without it (newsboat marks them "!", a deliberate task
+	// deviation recorded in the wave-3 commit).
 	const fixed = 2 + 2 + 6 + 2 // cursor, N mark, date, gaps
 	unread := !m.readOf(r.feedURL, r.art.ID)
 	mark := "  "
@@ -212,11 +217,15 @@ func (m Model) articleLine(r articleRef, selected bool) string {
 	if !r.art.Published.IsZero() {
 		date = r.art.Published.Format("Jan 02")
 	}
+	title := r.art.Title
+	if flags := m.flagOf(r.feedURL, r.art.ID); flags != "" {
+		title = "[" + flags + "] " + title
+	}
 	budget := m.width - fixed - 2 // headroom for the cursor prefix
 	if budget < 10 {
 		budget = 10
 	}
-	line := mark + date + "  " + truncate(r.art.Title, budget)
+	line := mark + date + "  " + truncate(title, budget)
 	if unread {
 		line = m.sty.articleUnread.Render(line)
 	} else {

@@ -12,12 +12,13 @@ import (
 )
 
 // feedState is the in-memory state of one feed: the article list (newest
-// first), per-article read flags and the conditional-request validators.
-// It is always held behind a pointer so Update's value-copy of the Model
-// still mutates the same state.
+// first), per-article read flags, per-article flag chars and the
+// conditional-request validators. It is always held behind a pointer so
+// Update's value-copy of the Model still mutates the same state.
 type feedState struct {
 	articles     []feed.Article // newest first
 	read         map[string]bool
+	flags        map[string]string // article ID -> flag chars, e.g. "aZ"
 	etag         string
 	lastModified string
 	lastFetched  time.Time
@@ -46,6 +47,7 @@ func (s *feedState) toStore() store.State {
 		LastFetched:  s.lastFetched,
 		Articles:     s.articles,
 		Read:         s.read,
+		Flags:        s.flags,
 	}
 }
 
@@ -63,10 +65,29 @@ func stateFromStore(ss store.State) *feedState {
 	return &feedState{
 		articles:     arts,
 		read:         read,
+		flags:        ss.Flags,
 		etag:         ss.ETag,
 		lastModified: ss.LastModified,
 		lastFetched:  ss.LastFetched,
 	}
+}
+
+// pruneFlags drops flag entries for articles that fell out of the list
+// (the read map gets the same treatment inside mergeArticles).
+func pruneFlags(flags map[string]string, articles []feed.Article) map[string]string {
+	if len(flags) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(flags))
+	for _, a := range articles {
+		if f := flags[a.ID]; f != "" {
+			out[a.ID] = f
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // statesLoadedMsg carries the locally cached state of all feeds. Loading

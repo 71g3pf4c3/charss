@@ -66,14 +66,21 @@ func (t *fakeTerminal) Restore() error {
 	return t.restoreErr
 }
 
-// fakeBrowser records the HTML shown to chawan.
+// fakeBrowser records the HTML shown to chawan and the URLs opened in
+// the browser.
 type fakeBrowser struct {
 	htmls []string
+	urls  []string
 	err   error
 }
 
 func (b *fakeBrowser) ShowHTML(_ context.Context, html string) error {
 	b.htmls = append(b.htmls, html)
+	return b.err
+}
+
+func (b *fakeBrowser) ShowURL(_ context.Context, url string) error {
+	b.urls = append(b.urls, url)
 	return b.err
 }
 

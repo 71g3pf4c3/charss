@@ -139,8 +139,8 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 	if fk != 1 {
 		t.Errorf("foreign_keys = %d, want 1", fk)
 	}
-	if v, err := metaGet(s.db, "schema_version"); err != nil || v != "1" {
-		t.Errorf("schema_version = %q, err = %v; want \"1\", nil", v, err)
+	if v, err := metaGet(s.db, "schema_version"); err != nil || v != "2" {
+		t.Errorf("schema_version = %q, err = %v; want \"2\", nil", v, err)
 	}
 }
 
@@ -363,5 +363,100 @@ func TestConcurrentSaves(t *testing.T) {
 		if got.Articles[0].Published.Second() != 24 {
 			t.Errorf("Load %s: last save did not win, published=%v", url, got.Articles[0].Published)
 		}
+	}
+}
+
+func TestFlagsRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	st := stateFixture()
+	st.Articles = append(st.Articles, feed.Article{ID: "id-2", Title: "Second"})
+	st.Flags = map[string]string{"id-1": "a", "id-2": "Za"}
+
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	if err := s.Save("https://example.com/feed.xml", st); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, ok, err := s.Load("https://example.com/feed.xml")
+	if err != nil || !ok {
+		t.Fatalf("Load: ok=%v err=%v", ok, err)
+	}
+	if !reflect.DeepEqual(got.Flags, st.Flags) {
+		t.Errorf("flags roundtrip mismatch:\n got: %#v\nwant: %#v", got.Flags, st.Flags)
+	}
+
+	// Clearing flags round-trips too: an empty entry is dropped, and a
+	// state without flags loads with a nil map.
+	st.Flags = map[string]string{"id-1": "a"}
+	if err := s.Save("https://example.com/feed.xml", st); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, _, err = s.Load("https://example.com/feed.xml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := map[string]string{"id-1": "a"}
+	if !reflect.DeepEqual(got.Flags, want) {
+		t.Errorf("flags = %#v, want %#v", got.Flags, want)
+	}
+
+	st.Flags = nil
+	if err := s.Save("https://example.com/feed.xml", st); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, _, err = s.Load("https://example.com/feed.xml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Flags != nil {
+		t.Errorf("flags = %#v, want nil when none are set", got.Flags)
+	}
+}
+
+// A database written before flags existed (schema_version 1) must gain
+// the column on the next open, transparently.
+func TestFlagsColumnMigrationFromSchemaV1(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	// Regress the database to the pre-flags schema.
+	if _, err := s.db.Exec(`ALTER TABLE articles DROP COLUMN flags`); err != nil {
+		s.Close()
+		t.Fatalf("regress schema: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE meta SET value = '1' WHERE key = 'schema_version'`); err != nil {
+		s.Close()
+		t.Fatalf("regress version: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Reopen: initSchema re-adds the column; saving flags then works.
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("reopen after migration: %v", err)
+	}
+	defer s.Close()
+
+	st := stateFixture()
+	st.Flags = map[string]string{"id-1": "Q"}
+	if err := s.Save("https://example.com/feed.xml", st); err != nil {
+		t.Fatalf("Save after migration: %v", err)
+	}
+	got, ok, err := s.Load("https://example.com/feed.xml")
+	if err != nil || !ok {
+		t.Fatalf("Load: ok=%v err=%v", ok, err)
+	}
+	if got.Flags["id-1"] != "Q" {
+		t.Errorf("flags after migration = %#v, want id-1: Q", got.Flags)
 	}
 }

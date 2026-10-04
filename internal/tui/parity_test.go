@@ -516,19 +516,31 @@ func TestDegenerateWindowSizeIgnored(t *testing.T) {
 	}
 }
 
-// ---- stubs ---------------------------------------------------------------------------
+// ---- wave-3 ops ---------------------------------------------------------------------
 
-func TestStubOpsReportStatus(t *testing.T) {
+// The s/o/u keys were wave-2 stubs; wave-3 makes them real (save prompt,
+// browser handoff, URL view), so they must no longer report "not
+// implemented". What they do on a bare model (no browser/terminal) is
+// degrade to a guard message or open the prompt.
+func TestFormerStubOpsAreImplemented(t *testing.T) {
 	m := newTUI(t, Options{Feeds: []urls.Feed{{URL: "a"}}})
 	setState(&m, "a", []feed.Article{art("1", t1, "")}, map[string]bool{})
 	m, _ = press(m, "enter")
 
-	for _, key := range []string{"s", "o", "u"} {
-		m.status = ""
-		m, _ = press(m, key)
-		if !contains(m.status, "not implemented") {
-			t.Errorf("key %q should report a not-implemented status, got %q", key, m.status)
-		}
+	m, _ = press(m, "s")
+	if m.inputKind != inputSavePath {
+		t.Errorf("s should open the save prompt, inputKind = %v", m.inputKind)
+	}
+	m, _ = press(m, "esc")
+
+	m, _ = press(m, "o") // no browser/terminal wired: guard, not stub
+	if contains(m.status, "not implemented") {
+		t.Errorf("o should be implemented, status %q", m.status)
+	}
+
+	m, _ = press(m, "u")
+	if m.screen != screenURLView {
+		t.Errorf("u should open the URL view, screen = %v", m.screen)
 	}
 }
 

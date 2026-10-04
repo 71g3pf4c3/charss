@@ -114,8 +114,10 @@ func parseLine(path string, lineno int, line string, res *parseResult, stack []s
 		if !knownContexts[ctx] {
 			res.warn("%s:%d: bind-key: unknown context %q", path, lineno, ctx)
 		}
-		if _, ok := Operations[op]; !ok {
+		if canon, ok := Operations[op]; !ok {
 			res.warn("%s:%d: bind-key: unknown operation %q", path, lineno, op)
+		} else if canon != op {
+			op = canon // alias (e.g. newsboat's macro-prefix) -> canonical name
 		}
 		res.bindings = append(res.bindings, bindingDirective{kind: bindKey, key: key, op: op, context: ctx})
 
@@ -148,8 +150,10 @@ func parseLine(path string, lineno int, line string, res *parseResult, stack []s
 			return fmt.Errorf("%s:%d: macro %q: no operations", path, lineno, key)
 		}
 		for _, op := range ops {
-			if _, ok := Operations[op.Op]; !ok {
+			if canon, ok := Operations[op.Op]; !ok {
 				res.warn("%s:%d: macro %q: unknown operation %q", path, lineno, key, op.Op)
+			} else if canon != op.Op {
+				op.Op = canon // alias -> canonical name
 			}
 		}
 		res.macros[key] = Macro{Ops: ops} // redefinition wins

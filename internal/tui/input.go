@@ -21,6 +21,10 @@ func (m Model) openInput(kind inputKind) (tea.Model, tea.Cmd) {
 		m.input.Prompt = "Filter: "
 	case inputSearch:
 		m.input.Prompt = "Search: "
+	case inputFlag:
+		m.input.Prompt = "Flag: "
+	case inputSavePath:
+		m.input.Prompt = "Save to: "
 	}
 	m.input.Focus()
 	m.input.Width = maxInt(0, m.width-len([]rune(m.input.Prompt))-2)
@@ -34,8 +38,9 @@ func (m *Model) closeInput() {
 	m.input.Blur()
 }
 
-// updateInput handles keys while the filter/search input is open: Enter
-// submits, Esc cancels, everything else goes to the text input.
+// updateInput handles keys while the filter/search/flag/save input is
+// open: Enter submits, Esc cancels, everything else goes to the text
+// input.
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
@@ -47,6 +52,10 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.applyFilterInput(value)
 		case inputSearch:
 			return m.applySearchInput(value)
+		case inputFlag:
+			return m.applyFlagInput(value)
+		case inputSavePath:
+			return m.applySaveInput(value)
 		}
 		return m, nil
 

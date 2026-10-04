@@ -30,7 +30,7 @@ const (
 )
 
 const articleSelect = `
-SELECT id, guid, title, link, author, content_html, published, read, enclosures
+SELECT id, guid, title, link, author, content_html, published, read, enclosures, flags
 FROM articles
 WHERE feed_url = ?
 ORDER BY published DESC, rowid ASC
@@ -84,6 +84,7 @@ func initSchema(db *sql.DB) error {
 			published    TIMESTAMP,
 			read         INTEGER NOT NULL DEFAULT 0,
 			enclosures   TEXT, -- JSON-encoded []feed.Enclosure
+			flags        TEXT, -- newsboat-style flag chars, e.g. "aZ"
 			PRIMARY KEY (feed_url, id),
 			FOREIGN KEY (feed_url) REFERENCES feeds(url) ON DELETE CASCADE
 		)`,
@@ -91,11 +92,19 @@ func initSchema(db *sql.DB) error {
 			key   TEXT PRIMARY KEY,
 			value TEXT
 		)`,
-		`INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1')`,
+		`INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2')`,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {
 			return fmt.Errorf("%q: %w", firstLine(q), err)
+		}
+	}
+	// Databases created before flags existed (schema_version 1) lack the
+	// column; CREATE TABLE IF NOT EXISTS does not add it. The ALTER is a
+	// no-op failure on fresh databases ("duplicate column name").
+	if _, err := db.Exec(`ALTER TABLE articles ADD COLUMN flags TEXT`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("add flags column: %w", err)
 		}
 	}
 	return nil
@@ -127,12 +136,16 @@ func saveState(tx *sql.Tx, key string, st State) error {
 		if st.Read[a.ID] {
 			read = 1
 		}
+		var flags any
+		if f := st.Flags[a.ID]; f != "" {
+			flags = f
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO articles
-				(id, feed_url, guid, title, link, author, content_html, published, read, enclosures)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				(id, feed_url, guid, title, link, author, content_html, published, read, enclosures, flags)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			a.ID, key, a.GUID, a.Title, a.URL, a.Author, a.ContentHTML,
-			formatTime(a.Published), read, enclosures); err != nil {
+			formatTime(a.Published), read, enclosures, flags); err != nil {
 			return err
 		}
 	}

@@ -9,6 +9,8 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +28,7 @@ const (
 	screenFeedList screen = iota
 	screenArticleList
 	screenHelp
+	screenURLView
 )
 
 // inputKind is what the single-line status-position input is collecting.
@@ -35,6 +38,8 @@ const (
 	inputNone inputKind = iota
 	inputFilter
 	inputSearch
+	inputFlag     // one flag character for the article under the cursor
+	inputSavePath // article save destination path
 )
 
 // Fallback terminal size used when the pty reports a degenerate 0x0
@@ -50,13 +55,15 @@ type Model struct {
 	bindings config.Bindings // resolved key bindings (config.Bindings is a value copy)
 	feeds    []urls.Feed     // urls-file order; the feed list shows this
 	states   map[string]*feedState
+	macros   map[string]config.Macro // `macro` definitions ("" = none)
 
 	// Injected dependencies; nil entries disable the related features
 	// (see the per-key guards) instead of crashing.
-	browser Browser
-	fetcher Fetcher
-	store   Storer
-	term    Terminal
+	browser  Browser
+	fetcher  Fetcher
+	store    Storer
+	term     Terminal
+	enqueuer Enqueuer
 
 	// View state.
 	screen   screen
@@ -64,6 +71,24 @@ type Model struct {
 	acursor  int    // article list cursor (over the visible, filtered refs)
 	active   string // feed URL (or query-feed URL) whose articles are shown
 	helpFrom screen // screen ? was pressed on
+
+	// URL view (show-urls) state: the snapshot is taken when the screen
+	// opens, so later refreshes cannot shift entries under the cursor.
+	urlEntries []string
+	urlFrom    screen
+	urlTitle   string // the article's title, for the view header
+	ucursor    int
+
+	// Prompt targets. Opening a prompt snapshots the article it applies
+	// to: a refresh landing while the prompt is open must not retarget it.
+	flagTarget articleRef
+	saveTarget articleRef
+
+	// Macro state. macroPending waits for the key selecting the macro;
+	// macroRunning guards the synchronous execution loop against
+	// re-entering run-macro from inside a macro.
+	macroPending bool
+	macroRunning bool
 
 	// Feed list session state. Filters are per-screen session state and
 	// are never persisted (newsboat behavior).
@@ -92,7 +117,15 @@ type Model struct {
 	feedSortOrder feedSortOrder
 	articleSort   articleSortOrder
 
-	opening    bool   // chawan is running (terminal handed off)
+	// Auto-reload and notifications. Parsed once at New from the config;
+	// changing auto-reload/reload-time requires a restart, exactly like
+	// newsboat does not re-arm a running timer mid-session.
+	autoReload   bool
+	reloadEvery  time.Duration // 0 disables the tick loop
+	notifyScreen bool
+	batchNew     int // new articles seen in the in-flight refresh batch
+
+	opening    bool   // an external browser owns the terminal (handoff)
 	refreshing int    // in-flight refreshes
 	status     string // transient status line
 	width      int
@@ -107,6 +140,9 @@ type Options struct {
 	Fetcher  Fetcher
 	Store    Storer
 	Terminal Terminal
+	// Enqueue is the persistent podcast download queue; nil disables
+	// the enqueue operation with a status message instead of a crash.
+	Enqueue Enqueuer
 	// Config is the resolved configuration (bindings, colors,
 	// options). nil disables config-driven behavior: no key is bound
 	// and built-in defaults apply to everything else. cmd/tui.go always
@@ -128,6 +164,7 @@ func New(opts Options) Model {
 		fetcher:  opts.Fetcher,
 		store:    opts.Store,
 		term:     opts.Terminal,
+		enqueuer: opts.Enqueue,
 		status:   opts.Warning,
 		showRead: true,
 		input:    input,
@@ -141,11 +178,32 @@ func New(opts Options) Model {
 		if opts.Config.Options["show-read-articles"] == "no" {
 			m.showRead = false
 		}
+		m.parseRuntimeOptions(opts.Config.Options)
+		m.macros = opts.Config.Macros
 	}
 	for _, f := range opts.Feeds {
 		m.states[f.URL] = nil // lazily filled by loadStatesCmd / refreshes
 	}
 	return m
+}
+
+// parseRuntimeOptions resolves the auto-reload and notification options.
+// reload-time is minutes with a floor of 1 (newsboat's documented
+// minimum); an unparsable value falls back to the 60-minute default
+// rather than silently disabling auto-reload.
+func (m *Model) parseRuntimeOptions(opts map[string]string) {
+	if opts["auto-reload"] == "yes" {
+		mins := 60
+		if v, err := strconv.Atoi(opts["reload-time"]); err == nil && v >= 1 {
+			mins = v
+		}
+		if mins < 1 {
+			mins = 1
+		}
+		m.autoReload = true
+		m.reloadEvery = time.Duration(mins) * time.Minute
+	}
+	m.notifyScreen = opts["notify-screen"] == "yes"
 }
 
 // Init implements tea.Model. Loading cached state only touches local
@@ -186,8 +244,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.errs) > 0 {
 			m.status = fmt.Sprintf("cache: %d feeds failed to load", len(msg.errs))
 		}
-		// Background auto-refresh after the cached data is on screen.
-		return m.startRefresh(realFeeds(m.feeds))
+		// Background auto-refresh after the cached data is on screen,
+		// and the periodic auto-reload loop after that (newsboat's
+		// auto-reload keeps reloading every reload-time minutes).
+		m2, cmd := m.startRefresh(realFeeds(m.feeds))
+		if m.autoReload {
+			cmd = tea.Batch(cmd, autoReloadCmd(m.reloadEvery))
+		}
+		return m2, cmd
+
+	case autoReloadTickMsg:
+		// The timer is only re-armed while auto-reload stays on; a
+		// stale tick after a (hypothetical) runtime switch dies here.
+		if !m.autoReload {
+			return m, nil
+		}
+		m2, cmd := m.startRefresh(realFeeds(m.feeds))
+		return m2, tea.Batch(cmd, autoReloadCmd(m.reloadEvery))
 
 	case refreshedMsg:
 		return m.applyRefreshed(msg)
@@ -195,6 +268,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateSavedMsg:
 		if msg.err != nil {
 			m.status = fmt.Sprintf("save: %v", msg.err)
+		}
+		return m, nil
+
+	case articleSavedMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("save: %v", msg.err)
+		} else {
+			m.status = fmt.Sprintf("saved to %s", msg.path)
 		}
 		return m, nil
 
@@ -212,11 +293,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.opening {
-			// chawan owns the terminal; swallow anything queued.
+			// The external browser owns the terminal; swallow anything
+			// queued.
 			return m, nil
+		}
+		if m.macroPending {
+			return m.selectMacro(msg)
 		}
 		if m.inputKind != inputNone {
 			return m.updateInput(msg)
+		}
+		// run-macro is intercepted globally: newsboat binds its macro
+		// prefix "," in every context, and the next key must select a
+		// macro whatever screen is active.
+		if m.lookupOp(msg) == config.OpRunMacro {
+			if m.macroRunning {
+				m.status = "macro: cannot nest run-macro"
+				return m, nil
+			}
+			if len(m.macros) == 0 {
+				m.status = "no macros defined"
+				return m, nil
+			}
+			m.macroPending = true
+			return m, nil
 		}
 		switch m.screen {
 		case screenFeedList:
@@ -225,16 +325,79 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateArticleList(msg)
 		case screenHelp:
 			return m.updateHelp(msg)
+		case screenURLView:
+			return m.updateURLView(msg)
 		}
 	}
 	return m, nil
 }
 
+// dispatchOp runs one operation in the currently active screen's handler.
+// Macro execution drives every step through here, so a macro op that
+// changes screens mid-sequence has its successors resolve in the NEW
+// context — newsboat macro semantics.
+func (m Model) dispatchOp(op, arg string) (tea.Model, tea.Cmd) {
+	switch m.screen {
+	case screenArticleList:
+		return m.articleListOp(op, arg)
+	case screenHelp:
+		return m.helpOp(op, arg)
+	case screenURLView:
+		return m.urlViewOp(op, arg)
+	default:
+		return m.feedListOp(op, arg)
+	}
+}
+
+// selectMacro resolves the key pressed after the macro prefix: the macro
+// it names runs immediately, Esc cancels, an unknown key reports a status
+// error.
+func (m Model) selectMacro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.macroPending = false
+	if msg.Type == tea.KeyEsc {
+		return m, nil
+	}
+	key := newsboatKeyName(msg)
+	mac, ok := m.macros[key]
+	if !ok {
+		m.status = fmt.Sprintf("macro %q: not defined", key)
+		return m, nil
+	}
+	return m.runMacro(mac.Ops)
+}
+
+// runMacro executes a macro's operations sequentially through the same
+// op dispatch as key handling. Ops carrying an argument (save path, flag
+// char) bypass their prompts; everything else behaves exactly as if the
+// bound key had been pressed.
+func (m Model) runMacro(ops []config.MacroOp) (tea.Model, tea.Cmd) {
+	m.macroRunning = true
+	var cmds []tea.Cmd
+	for _, mo := range ops {
+		if mo.Op == config.OpRunMacro {
+			continue // no nested macro execution
+		}
+		var cmd tea.Cmd
+		var tm tea.Model
+		tm, cmd = m.dispatchOp(mo.Op, mo.Arg)
+		m = tm.(Model)
+		cmds = append(cmds, cmd)
+	}
+	m.macroRunning = false
+	return m, tea.Batch(cmds...)
+}
+
 // updateFeedList dispatches one key on the feed list through the
 // resolved bindings (feedlist context, "all" fallback).
 func (m Model) updateFeedList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.feedListOp(m.lookupOp(msg), "")
+}
+
+// feedListOp applies one operation (plus an optional macro argument) to
+// the feed list.
+func (m Model) feedListOp(op, arg string) (tea.Model, tea.Cmd) {
 	rows := m.feedRows()
-	switch m.lookupOp(msg) {
+	switch op {
 	case config.OpOpen:
 		if len(rows) == 0 {
 			m.status = "no feeds — add URLs to your urls file"
@@ -336,8 +499,28 @@ func (m Model) updateFeedList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenHelp
 		m.status = ""
 
-	case config.OpSave, config.OpOpenInBrowser, config.OpShowURLs:
-		m.status = fmt.Sprintf("%s: not implemented", m.lookupOp(msg))
+	case config.OpOpenInBrowser:
+		if len(rows) == 0 {
+			return m, nil
+		}
+		row := rows[m.cursor]
+		if row.query != nil || row.queryErr != nil {
+			m.status = "cannot open a query feed in the browser"
+			return m, nil
+		}
+		if row.feed.URL == "" {
+			m.status = "feed has no URL"
+			return m, nil
+		}
+		if m.browser == nil || m.term == nil {
+			m.status = errNoBrowser.Error()
+			return m, nil
+		}
+		m.opening = true
+		return m, openURLCmd(m.term, m.browser, row.feed.URL)
+
+	case config.OpSave, config.OpShowURLs, config.OpToggleFlag, config.OpEnqueue:
+		m.status = fmt.Sprintf("%s: only on the article list", op)
 
 	default:
 		// Ops that only make sense on the article list (or are not
@@ -350,9 +533,15 @@ func (m Model) updateFeedList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // updateArticleList dispatches one key on the article list through the
 // resolved bindings (articlelist context, "all" fallback).
 func (m Model) updateArticleList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.articleListOp(m.lookupOp(msg), "")
+}
+
+// articleListOp applies one operation (plus an optional macro argument)
+// to the article list.
+func (m Model) articleListOp(op, arg string) (tea.Model, tea.Cmd) {
 	refs := m.articleRefs()
 
-	switch m.lookupOp(msg) {
+	switch op {
 	case config.OpOpen:
 		if len(refs) == 0 {
 			m.status = "no articles — press q and r to reload this feed"
@@ -454,6 +643,58 @@ func (m Model) updateArticleList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showRead = !m.showRead
 		m.acursor = clampInt(m.acursor, 0, len(refs)-1)
 
+	case config.OpToggleFlag:
+		if len(refs) == 0 {
+			return m, nil
+		}
+		if arg != "" {
+			// Macro path: the argument is the flag character itself.
+			return m.applyFlag(refs[m.acursor], arg)
+		}
+		return m.openFlagPrompt(refs[m.acursor])
+
+	case config.OpSave:
+		if len(refs) == 0 {
+			return m, nil
+		}
+		if arg != "" {
+			// Macro path: the argument is the destination path.
+			return m.saveArticle(refs[m.acursor], arg)
+		}
+		return m.openSavePrompt(refs[m.acursor])
+
+	case config.OpOpenInBrowser:
+		if len(refs) == 0 {
+			return m, nil
+		}
+		if refs[m.acursor].art.URL == "" {
+			m.status = "article has no URL"
+			return m, nil
+		}
+		if m.browser == nil || m.term == nil {
+			m.status = errNoBrowser.Error()
+			return m, nil
+		}
+		m.opening = true
+		return m, openURLCmd(m.term, m.browser, refs[m.acursor].art.URL)
+
+	case config.OpShowURLs:
+		if len(refs) == 0 {
+			return m, nil
+		}
+		m.urlEntries = extractURLs(refs[m.acursor].art)
+		m.urlFrom = m.screen
+		m.urlTitle = refs[m.acursor].art.Title
+		m.ucursor = 0
+		m.screen = screenURLView
+		m.status = ""
+
+	case config.OpEnqueue:
+		if len(refs) == 0 {
+			return m, nil
+		}
+		return m.enqueueEnclosure(refs[m.acursor])
+
 	case config.OpSearch:
 		return m.openInput(inputSearch)
 
@@ -469,17 +710,19 @@ func (m Model) updateArticleList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpFrom = m.screen
 		m.screen = screenHelp
 		m.status = ""
-
-	case config.OpSave, config.OpOpenInBrowser, config.OpShowURLs:
-		m.status = fmt.Sprintf("%s: not implemented", m.lookupOp(msg))
 	}
 	return m, nil
 }
 
 // updateHelp dispatches one key on the help screen (help context).
 func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.helpOp(m.lookupOp(msg), "")
+}
+
+// helpOp applies one operation to the help screen.
+func (m Model) helpOp(op, _ string) (tea.Model, tea.Cmd) {
 	rows := m.helpRows()
-	switch m.lookupOp(msg) {
+	switch op {
 	case config.OpQuit:
 		m.screen = m.helpFrom
 		m.status = ""
@@ -531,8 +774,8 @@ func (m Model) firstUnreadFrom(refs []articleRef, start, dir int) int {
 
 // jumpFeedUnread implements next-unread/prev-unread on the feed list:
 // move to the next feed (wrapping once) that has unread articles, open
-// its article list at the first unread article (newsboat's n jumps to
-// the next unread article, not just the next feed).
+// its article list at the first unread article (newsboat's n jumps to the
+// next unread article, not just the next feed).
 func (m Model) jumpFeedUnread(rows []feedRow, dir int) (tea.Model, tea.Cmd) {
 	if len(rows) == 0 {
 		m.status = "no unread articles"
@@ -603,6 +846,9 @@ func (m Model) startRefresh(feeds []urls.Feed) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, refreshFeedCmd(m.fetcher, sem, f, etag, lastModified))
 	}
 	m.refreshing += len(feeds)
+	if m.refreshing == len(feeds) {
+		m.batchNew = 0 // a fresh batch starts here
+	}
 	if len(feeds) > 1 {
 		m.status = fmt.Sprintf("refreshing %d feeds…", len(feeds))
 	} else {

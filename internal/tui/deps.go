@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/71g3pf4c3/charss/internal/feed"
+	"github.com/71g3pf4c3/charss/internal/podcast"
 	"github.com/71g3pf4c3/charss/internal/store"
 	"github.com/71g3pf4c3/charss/internal/urls"
 )
@@ -15,6 +16,15 @@ import (
 // *render.Chawan; tests inject fakes. The TUI never renders HTML itself.
 type Browser interface {
 	ShowHTML(ctx context.Context, html string) error
+	// ShowURL opens a plain URL (feed link, article link, URL-view
+	// selection) in the same external browser.
+	ShowURL(ctx context.Context, url string) error
+}
+
+// Enqueuer adds an enclosure to the persistent podcast download queue.
+// It is implemented by *podcast.Queue; tests inject fakes.
+type Enqueuer interface {
+	Add(it podcast.Item) error
 }
 
 // Fetcher fetches feeds over HTTP. It is implemented by *feed.Fetcher;

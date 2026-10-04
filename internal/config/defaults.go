@@ -8,9 +8,13 @@ const (
 )
 
 // defaultOptions is the option map Load starts from; file options overwrite.
+// auto-reload / reload-time / notify-screen carry newsboat's defaults.
 var defaultOptions = map[string]string{
-	"browser": DefaultBrowser,
-	"chafa":   DefaultChafa,
+	"browser":       DefaultBrowser,
+	"chafa":         DefaultChafa,
+	"auto-reload":   "no",
+	"reload-time":   "60",
+	"notify-screen": "no",
 }
 
 // knownOptions are the options charss itself consumes. Everything else
@@ -22,6 +26,9 @@ var knownOptions = map[string]bool{
 	"feed-sort-order":    true,
 	"article-sort-order": true,
 	"show-read-articles": true,
+	"auto-reload":        true,
+	"reload-time":        true,
+	"notify-screen":      true,
 }
 
 // defaultKeys is a subset of newsboat's default key bindings for the
@@ -41,6 +48,9 @@ var defaultKeys = map[string]map[string]string{
 		"G":    OpLast,
 		"HOME": OpFirst,
 		"END":  OpLast,
+		// macro execution lives in "all" too: newsboat binds its
+		// macro-prefix "," in every newsboat context.
+		",": OpRunMacro,
 	},
 	CtxFeedList: {
 		"ENTER": OpOpen,
@@ -87,6 +97,7 @@ var defaultKeys = map[string]map[string]string{
 		"u":     OpShowURLs,
 		"N":     OpToggleArticleRead,
 		"m":     OpToggleArticleRead,
+		"^":     OpToggleFlag,
 		"D":     OpDeleteArticle,
 		"e":     OpEnqueue,
 		"/":     OpSearch,
@@ -118,7 +129,19 @@ var defaultKeys = map[string]map[string]string{
 		"PPAGE": OpPageUp,
 		"ESC":   OpQuit,
 	},
-	CtxDialog: {},
+	// CtxDialog is also the binding context of the show-urls URL view
+	// (newsboat has a dedicated "urlview" context with the same
+	// navigation defaults).
+	CtxDialog: {
+		"ENTER": OpOpen,
+		"DOWN":  OpDown,
+		"UP":    OpUp,
+		"j":     OpDown,
+		"k":     OpUp,
+		"NPAGE": OpPageDown,
+		"PPAGE": OpPageUp,
+		"ESC":   OpQuit,
+	},
 	CtxPodcast: {
 		"DOWN": OpDown,
 		"UP":   OpUp,

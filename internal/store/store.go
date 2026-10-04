@@ -33,11 +33,12 @@ import (
 
 // State is the persisted per-feed state.
 type State struct {
-	ETag         string          `json:"etag,omitempty"`
-	LastModified string          `json:"last_modified,omitempty"`
-	LastFetched  time.Time       `json:"last_fetched"`
-	Articles     []feed.Article  `json:"articles"`
-	Read         map[string]bool `json:"read"` // article ID -> read
+	ETag         string            `json:"etag,omitempty"`
+	LastModified string            `json:"last_modified,omitempty"`
+	LastFetched  time.Time         `json:"last_fetched"`
+	Articles     []feed.Article    `json:"articles"`
+	Read         map[string]bool   `json:"read"`            // article ID -> read
+	Flags        map[string]string `json:"flags,omitempty"` // article ID -> flag chars, e.g. "aZ" ("" = no flags)
 }
 
 // Store is a SQLite-backed store rooted at a fixed directory.
@@ -122,15 +123,17 @@ func (s *Store) Load(feedURL string) (State, bool, error) {
 
 	articles := make([]feed.Article, 0, 16)
 	read := make(map[string]bool)
+	var flags map[string]string
 	for rows.Next() {
 		var (
 			a                  feed.Article
 			published, enclCol sql.NullString
+			flagsCol           sql.NullString
 			isRead             bool
 		)
 		if err := rows.Scan(
 			&a.ID, &a.GUID, &a.Title, &a.URL, &a.Author, &a.ContentHTML,
-			&published, &isRead, &enclCol,
+			&published, &isRead, &enclCol, &flagsCol,
 		); err != nil {
 			return State{}, false, fmt.Errorf("store: load articles for %s: %w", feedURL, err)
 		}
@@ -144,6 +147,12 @@ func (s *Store) Load(feedURL string) (State, bool, error) {
 		if isRead {
 			read[a.ID] = true
 		}
+		if flagsCol.Valid && flagsCol.String != "" {
+			if flags == nil {
+				flags = make(map[string]string)
+			}
+			flags[a.ID] = flagsCol.String
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return State{}, false, fmt.Errorf("store: load articles for %s: %w", feedURL, err)
@@ -154,6 +163,9 @@ func (s *Store) Load(feedURL string) (State, bool, error) {
 	}
 	if len(read) > 0 {
 		st.Read = read
+	}
+	if len(flags) > 0 {
+		st.Flags = flags
 	}
 	return st, true, nil
 }

@@ -98,7 +98,7 @@ func (m Model) queryUnread(flt *filter.Filter) int {
 			if st.read[a.ID] {
 				continue
 			}
-			if flt.Eval(filter.SubjectFromArticle(a, f.URL, title, false)) {
+			if flt.Eval(m.subjectOf(f.URL, title, a)) {
 				n++
 			}
 		}
@@ -254,9 +254,18 @@ func (m Model) queryArticles(flt *filter.Filter) []articleRef {
 }
 
 // articleSubject adapts an article ref to a filter subject with the
-// live read state.
+// live read state and flag chars (the filter language's `flags`
+// attribute evaluates from the persisted flags).
 func (m Model) articleSubject(r articleRef) filter.Subject {
-	return filter.SubjectFromArticle(r.art, r.feedURL, r.feedTitle, m.readOf(r.feedURL, r.art.ID))
+	return m.subjectOf(r.feedURL, r.feedTitle, r.art)
+}
+
+// subjectOf adapts one article to a filter subject, filling in the
+// fields internal/feed cannot know (read state, flags).
+func (m Model) subjectOf(feedURL, feedTitle string, a feed.Article) filter.Subject {
+	subj := filter.SubjectFromArticle(a, feedURL, feedTitle, m.readOf(feedURL, a.ID))
+	subj.Flags = m.flagOf(feedURL, a.ID)
+	return subj
 }
 
 // readOf reports the live read state of an article in its owning feed.

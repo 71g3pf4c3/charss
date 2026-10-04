@@ -19,6 +19,7 @@ const (
 	OpSet         = "set" // only meaningful inside macros
 	OpCmdline     = "cmdline"
 	OpViewDialogs = "view-dialogs"
+	OpRunMacro    = "run-macro"
 
 	// Navigation.
 	OpUp             = "up"
@@ -52,6 +53,7 @@ const (
 	OpToggleArticleRead                 = "toggle-article-read"
 	OpToggleShowReadFeeds               = "toggle-show-read-feeds"
 	OpToggleShowReadArticles            = "toggle-show-read-articles"
+	OpToggleFlag                        = "toggle-flag"
 	OpToggleSourceView                  = "toggle-source-view"
 	OpShowURLs                          = "show-urls"
 	OpDeleteArticle                     = "delete-article"
@@ -80,17 +82,24 @@ const (
 // Operations is the canonical map from operation name to op string. It
 // doubles as the validation set for `bind-key` targets and macro steps:
 // names not present produce a warning, not an error.
+//
+// Alias entries (value != key) normalize newsboat's spelling of an
+// operation onto charss's canonical name at parse time, so a config
+// written for newsboat keeps working. The only alias today: newsboat
+// calls macro execution "macro-prefix"; charss spells it "run-macro".
 var Operations = map[string]string{
-	OpOpen:        OpOpen,
-	OpQuit:        OpQuit,
-	OpHardQuit:    OpHardQuit,
-	OpReload:      OpReload,
-	OpReloadAll:   OpReloadAll,
-	OpRedraw:      OpRedraw,
-	OpHelp:        OpHelp,
-	OpSet:         OpSet,
-	OpCmdline:     OpCmdline,
-	OpViewDialogs: OpViewDialogs,
+	OpOpen:         OpOpen,
+	OpQuit:         OpQuit,
+	OpHardQuit:     OpHardQuit,
+	OpReload:       OpReload,
+	OpReloadAll:    OpReloadAll,
+	OpRedraw:       OpRedraw,
+	OpHelp:         OpHelp,
+	OpSet:          OpSet,
+	OpCmdline:      OpCmdline,
+	OpViewDialogs:  OpViewDialogs,
+	OpRunMacro:     OpRunMacro,
+	"macro-prefix": OpRunMacro,
 
 	OpUp:             OpUp,
 	OpDown:           OpDown,
@@ -122,6 +131,7 @@ var Operations = map[string]string{
 	OpToggleArticleRead:                 OpToggleArticleRead,
 	OpToggleShowReadFeeds:               OpToggleShowReadFeeds,
 	OpToggleShowReadArticles:            OpToggleShowReadArticles,
+	OpToggleFlag:                        OpToggleFlag,
 	OpToggleSourceView:                  OpToggleSourceView,
 	OpShowURLs:                          OpShowURLs,
 	OpDeleteArticle:                     OpDeleteArticle,
